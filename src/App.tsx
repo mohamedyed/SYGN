@@ -318,8 +318,24 @@ function SiteHeader({
   const [showUserMenu, setShowUserMenu] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const isActive = (path: string) => location.pathname === path ? 'is-active' : ''
+
+  useEffect(() => {
+    setShowUserMenu(false)
+  }, [location.pathname])
+
+  useEffect(() => {
+    if (!showUserMenu) return
+    const handleClick = (e: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false)
+      }
+    }
+    document.addEventListener('pointerdown', handleClick)
+    return () => document.removeEventListener('pointerdown', handleClick)
+  }, [showUserMenu])
 
   return (
     <header className="site-header">
@@ -345,7 +361,7 @@ function SiteHeader({
           <ShoppingBag size={18} strokeWidth={2} />
           {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
         </Link>
-        <div className="user-menu-wrapper">
+        <div className="user-menu-wrapper" ref={menuRef}>
           <button
             className="icon-button"
             type="button"
@@ -623,6 +639,13 @@ function CheckoutView({
     name: '', email: user?.email ?? '', address: '', city: '', state: '', zip: '',
   })
 
+  const isFormValid = shipping.name.trim().length > 1
+    && shipping.email.includes('@')
+    && shipping.address.trim().length > 3
+    && shipping.city.trim().length > 1
+    && shipping.state.trim().length > 1
+    && shipping.zip.trim().length > 2
+
   const handlePlaceOrder = async () => {
     if (cart.items.length === 0) return
     setSubmitting(true)
@@ -632,13 +655,13 @@ function CheckoutView({
         .from('orders')
         .insert({
           user_id: user?.id ?? null,
-          total: cart.total,
-          shipping_name: shipping.name,
-          shipping_email: shipping.email,
-          shipping_address: shipping.address,
-          shipping_city: shipping.city,
-          shipping_state: shipping.state,
-          shipping_zip: shipping.zip,
+          total: 0,
+          shipping_name: shipping.name.trim(),
+          shipping_email: shipping.email.trim(),
+          shipping_address: shipping.address.trim(),
+          shipping_city: shipping.city.trim(),
+          shipping_state: shipping.state.trim(),
+          shipping_zip: shipping.zip.trim(),
         })
         .select()
         .single()
@@ -809,7 +832,7 @@ function CheckoutView({
             className="button-primary wide"
             type="button"
             onClick={handlePlaceOrder}
-            disabled={submitting || !shipping.name || !shipping.address}
+            disabled={submitting || !isFormValid}
           >
             {submitting ? 'Placing Order...' : 'Complete Order'} <ArrowRight size={16} />
           </button>

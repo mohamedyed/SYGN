@@ -78,6 +78,15 @@ export function useAdmin() {
   }, [])
 
   const uploadImage = useCallback(async (file: File): Promise<string | null> => {
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image must be under 5MB')
+      return null
+    }
+    if (!file.type.startsWith('image/')) {
+      setError('File must be an image')
+      return null
+    }
+
     const ext = file.name.split('.').pop() ?? 'png'
     const path = `products/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
 

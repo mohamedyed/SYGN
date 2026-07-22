@@ -1,31 +1,47 @@
-# React + TypeScript + Vite
+# SYGN
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Street-grade signage e-commerce storefront with floating draggable signs, glassmorphism UI, and full Supabase backend.
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React 19 + TypeScript 8
+- Vite 8 + Tailwind CSS 4
+- Framer Motion + Lucide React
+- Supabase (Auth, Database, Storage)
 
-## React Compiler
+## Setup
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+cp .env.example .env
+# Fill in your Supabase credentials
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Environment Variables
+
+| Variable | Description |
+|---|---|
+| `VITE_SUPABASE_URL` | Your Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Your Supabase anonymous/public key |
+
+## Database Setup
+
+1. Run `supabase-schema.sql` in Supabase SQL Editor
+2. Run `admin-migration.sql` in Supabase SQL Editor
+3. Sign up with your admin email, then set `is_admin = true` in the profiles table
+
+## Production Build
+
+```bash
+npm run build
+npm run lint
+```
+
+## Security Notes
+
+- RLS enabled on all tables
+- Admin operations require `is_admin` flag in profiles
+- Order totals calculated server-side via database trigger
+- Image uploads validated (5MB limit, image types only)
+- Environment variables excluded from git via `.gitignore`

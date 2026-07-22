@@ -156,7 +156,11 @@ CREATE POLICY "Users can view own order items" ON order_items
     )
   );
 CREATE POLICY "Users can create order items" ON order_items
-  FOR INSERT WITH CHECK (true);
+  FOR INSERT WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM orders WHERE orders.id = order_items.order_id AND (orders.user_id = auth.uid() OR orders.user_id IS NULL)
+    )
+  );
 
 -- Reviews: anyone can read, authenticated users can create
 CREATE POLICY "Reviews are public" ON reviews
@@ -171,6 +175,35 @@ CREATE POLICY "Users can delete own reviews" ON reviews
 -- ============================================
 -- SEED DATA (only insert if table is empty)
 -- ============================================
+
+-- Server-side order validation function
+CREATE OR REPLACE FUNCTION validate_order_total(p_order_id uuid)
+RETURNS numeric
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT coalesce(sum(unit_price * quantity), 0) FROM order_items WHERE order_id = p_order_id;
+$$;
+
+-- Prevent order total manipulation: auto-update total from order_items
+CREATE OR REPLACE FUNCTION sync_order_total()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE orders SET total = (
+    SELECT coalesce(sum(unit_price * quantity), 0) FROM order_items WHERE order_id = NEW.order_id
+  ) WHERE id = NEW.order_id;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_order_item_insert ON order_items;
+CREATE TRIGGER on_order_item_insert
+  AFTER INSERT ON order_items
+  FOR EACH ROW EXECUTE FUNCTION sync_order_total();
 
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM categories LIMIT 1) THEN
