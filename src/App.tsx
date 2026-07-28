@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BrowserRouter, Routes, Route, useNavigate, useParams, useLocation, Link, Navigate } from 'react-router-dom'
+import coverImage from './assets/cover.png'
 import {
   ArrowRight,
-  CreditCard,
   Lock,
   Moon,
   Search,
@@ -22,6 +22,7 @@ import {
   X,
   LayoutDashboard,
   Shield,
+  Tags,
 } from 'lucide-react'
 import './index.css'
 
@@ -161,7 +162,7 @@ function useTrendingSigns(products: Product[]): { signs: TrendingSign[]; isShuff
     return signData.map((base, i) => ({
       ...base,
       ...layout[i],
-      price_display: `$${base.price.toLocaleString()}`,
+      price_display: `${base.price.toLocaleString()} DT`,
     }))
   }, [signOrder, products])
 
@@ -212,7 +213,7 @@ function App() {
   const [theme, setTheme] = useState<Theme>('dark')
   const auth = useAuth()
   const cart = useCart()
-  const { products, categories, loading, refetch } = useProducts()
+  const { products, labels, productLabels, loading, refetch, refetchLabels } = useProducts()
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -241,7 +242,8 @@ function App() {
             <Route path="/collection" element={
               <CollectionView
                 products={products}
-                categories={categories}
+                labels={labels}
+                productLabels={productLabels}
                 loading={loading}
               />
             } />
@@ -269,7 +271,7 @@ function App() {
                   <div className="loading-spinner" />
                 </div>
               ) : auth.isAdmin ? (
-                <AdminView products={products} categories={categories} refetchProducts={refetch} />
+                <AdminView products={products} labels={labels} refetchProducts={refetch} refetchLabels={refetchLabels} />
               ) : (
                 <Navigate to="/auth" replace />
               )
@@ -341,7 +343,7 @@ function SiteHeader({
     <header className="site-header">
       <div className="header-left">
         <Link to="/" className="brand-mark">
-          SYGN<span className="brand-mark-accent">.</span>
+          SY<span className="brand-arabic">ڨ</span>N<span className="brand-mark-accent">.</span>
         </Link>
         <nav className="primary-nav" aria-label="Primary">
           <Link to="/" className={`nav-link ${isActive('/')}`}>Shop</Link>
@@ -410,10 +412,16 @@ function HomeView({
       <div className="ambient-glow" style={{ width: 600, height: 600, top: '30%', right: '-10%', background: 'radial-gradient(circle, rgba(59,130,246,0.05), transparent 70%)' }} />
       <div className="ambient-glow" style={{ width: 400, height: 400, bottom: '10%', left: '20%', background: 'radial-gradient(circle, rgba(168,85,247,0.04), transparent 70%)' }} />
 
+      <img src={coverImage} alt="" className="shop-intro-cover" aria-hidden="true" />
+
       <div className="streetscape">
         <div className="shop-intro">
           <h1>The Digital Street</h1>
           <p>Street-grade signage for modern spaces. Walk through and find your sign.</p>
+        </div>
+
+        <div style={{ textAlign: 'center' }}>
+          <Link to="/collection" className="button-primary">Order Now <ArrowRight size={16} /></Link>
         </div>
 
         {loading ? (
@@ -473,19 +481,21 @@ function DraggableSign({ sign }: { sign: TrendingSign }) {
 
 function CollectionView({
   products,
-  categories,
+  labels,
+  productLabels,
   loading,
 }: {
   products: Product[]
-  categories: Array<{ id: string; name: string; slug: string }>
+  labels: Array<{ id: string; name: string; slug: string }>
+  productLabels: Record<string, string[]>
   loading: boolean
 }) {
-  const [activeCategory, setActiveCategory] = useState<string | null>(null)
+  const [activeLabel, setActiveLabel] = useState<string | null>(null)
 
   const filteredProducts = useMemo(() => {
-    if (!activeCategory) return products
-    return products.filter(p => p.category_id === activeCategory)
-  }, [products, activeCategory])
+    if (!activeLabel) return products
+    return products.filter(p => productLabels[p.id]?.includes(activeLabel))
+  }, [products, activeLabel, productLabels])
 
   return (
     <section className="page-collection">
@@ -503,10 +513,10 @@ function CollectionView({
       <div className="collection-layout">
         <aside className="filter-panel">
           <FilterSection
-            title="Category"
-            items={[{ label: 'All Signs', value: null }, ...categories.map(c => ({ label: c.name, value: c.id }))]}
-            active={activeCategory}
-            onSelect={setActiveCategory}
+            title="Label"
+            items={[{ label: 'All Signs', value: null }, ...labels.map(c => ({ label: c.name, value: c.id }))]}
+            active={activeLabel}
+            onSelect={setActiveLabel}
           />
         </aside>
 
@@ -594,7 +604,7 @@ function ProductView({
             <h1>{product.title}</h1>
             <p>{product.subtitle}</p>
           </div>
-          <div className="product-price">${product.price.toLocaleString()}.00</div>
+          <div className="product-price">{product.price.toLocaleString()} DT</div>
           <p className="product-description">
             {product.description || 'Hand-crafted high-grade aluminum. Precision-engineered light distribution. 50,000 hour lifespan. A statement piece designed for modern interiors.'}
           </p>
@@ -659,25 +669,23 @@ function CheckoutView({
       const productIds = cart.items.map(i => i.productId)
       const { data: products, error: fetchError } = await supabase
         .from('products')
-        .select('id, title, stock')
+        .select('id, title, price, stock')
         .in('id', productIds)
 
       if (fetchError) throw fetchError
-
-      const stockMap = new Map(products?.map(p => [p.id, p]) ?? [])
-      const outOfStock: string[] = []
-
-      for (const item of cart.items) {
-        const product = stockMap.get(item.productId)
-        if (!product || product.stock < item.quantity) {
-          outOfStock.push(item.title)
-        }
+      if (!products || products.length !== productIds.length) {
+        throw new Error('Some products no longer exist')
       }
 
-      if (outOfStock.length > 0) {
-        setStockError(`Insufficient stock: ${outOfStock.join(', ')}. Please remove these items and try again.`)
-        setSubmitting(false)
-        return
+      const productMap = new Map(products.map(p => [p.id, p]))
+
+      for (const item of cart.items) {
+        const product = productMap.get(item.productId)
+        if (!product || product.stock < item.quantity) {
+          setStockError(`Insufficient stock: ${item.title}. Please remove it and try again.`)
+          setSubmitting(false)
+          return
+        }
       }
 
       const { data: order, error: orderError } = await supabase
@@ -697,23 +705,36 @@ function CheckoutView({
 
       if (orderError) throw orderError
 
-      const items = cart.items.map(item => ({
-        order_id: order.id,
-        product_id: item.productId,
-        quantity: item.quantity,
-        unit_price: item.price,
-      }))
+      // Use DB prices — ignore whatever the client may have tampered with in localStorage
+      const items = cart.items.map(item => {
+        const product = productMap.get(item.productId)!
+        return {
+          order_id: order.id,
+          product_id: item.productId,
+          quantity: item.quantity,
+          unit_price: product.price,
+        }
+      })
 
       const { error: itemsError } = await supabase.from('order_items').insert(items)
-      if (itemsError) throw itemsError
+      if (itemsError) {
+        await supabase.from('orders').delete().eq('id', order.id)
+        throw itemsError
+      }
 
       for (const item of cart.items) {
-        const product = stockMap.get(item.productId)
-        if (product) {
-          await supabase
-            .from('products')
-            .update({ stock: product.stock - item.quantity })
-            .eq('id', item.productId)
+        const product = productMap.get(item.productId)!
+        const { error: stockError } = await supabase
+          .from('products')
+          .update({ stock: product.stock - item.quantity })
+          .eq('id', item.productId)
+          .gte('stock', item.quantity)
+
+        if (stockError) {
+          await supabase.from('order_items').delete().eq('order_id', order.id)
+          await supabase.from('orders').delete().eq('id', order.id)
+          setStockError(`Stock changed for ${item.title}. Please try again.`)
+          return
         }
       }
 
@@ -721,6 +742,7 @@ function CheckoutView({
       setOrderPlaced(true)
     } catch (err) {
       console.error('Order failed:', err)
+      setStockError('Something went wrong. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -817,23 +839,11 @@ function CheckoutView({
           </CheckoutBlock>
 
           <CheckoutBlock title="Payment" step="Step 3 of 3">
-            <p className="payment-note">All transactions are secure and encrypted.</p>
+            <p className="payment-note">Pay on delivery — cash only.</p>
             <div className="payment-method">
               <label>
                 <input type="radio" name="payment" defaultChecked />
-                <span>Credit Card</span>
-              </label>
-              <CreditCard size={18} />
-            </div>
-            <div className="field-row three-up">
-              <input className="field-input" placeholder="Card Number" />
-              <input className="field-input" placeholder="MM / YY" />
-              <input className="field-input" placeholder="CVC" />
-            </div>
-            <div className="payment-method">
-              <label>
-                <input type="radio" name="payment" />
-                <span>PayPal</span>
+                <span>Cash on Delivery</span>
               </label>
               <Lock size={18} />
             </div>
@@ -855,17 +865,17 @@ function CheckoutView({
                 <h3>{item.title}</h3>
                 <p>Qty: {item.quantity}</p>
               </div>
-              <strong>${(item.price * item.quantity).toLocaleString()}</strong>
+              <strong>{(item.price * item.quantity).toLocaleString()} DT</strong>
             </div>
           ))}
           <div className="summary-lines">
-            <div><span>Subtotal</span><strong>${cart.total.toLocaleString()}.00</strong></div>
+            <div><span>Subtotal</span><strong>{cart.total.toLocaleString()} DT</strong></div>
             <div><span>Shipping</span><strong>Free</strong></div>
-            <div><span>Taxes</span><strong>$0.00</strong></div>
+            <div><span>Taxes</span><strong>0 DT</strong></div>
           </div>
           <div className="summary-total">
             <span>Total</span>
-            <strong>USD ${cart.total.toLocaleString()}.00</strong>
+            <strong>{cart.total.toLocaleString()} DT</strong>
           </div>
           {stockError && <p className="auth-error" style={{ marginBottom: 12 }}>{stockError}</p>}
           <button
@@ -924,7 +934,7 @@ function AuthView({
       <div className="auth-card">
         <div className="auth-header">
           <h1>{isSignUp ? 'Create Account' : 'Sign In'}</h1>
-          <p>{isSignUp ? 'Join SYGN to track orders and more.' : 'Welcome back.'}</p>
+          <p>{isSignUp ? 'Join SYڨN to track orders and more.' : 'Welcome back.'}</p>
         </div>
         <form className="auth-form" onSubmit={handleSubmit}>
           {isSignUp && (
@@ -975,21 +985,24 @@ function AuthView({
 
 function AdminView({
   products,
-  categories,
+  labels,
   refetchProducts,
+  refetchLabels,
 }: {
   products: Product[]
-  categories: Array<{ id: string; name: string; slug: string }>
+  labels: Array<{ id: string; name: string; slug: string }>
   refetchProducts: () => Promise<void>
+  refetchLabels: () => Promise<void>
 }) {
   const location = useLocation()
   const navigate = useNavigate()
   const admin = useAdmin()
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'add'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'add' | 'labels'>('dashboard')
 
   const tabFromUrl = useCallback(() => {
     if (location.pathname === '/admin/products') return 'products' as const
     if (location.pathname === '/admin/add') return 'add' as const
+    if (location.pathname === '/admin/labels') return 'labels' as const
     return 'dashboard' as const
   }, [location.pathname])
 
@@ -999,12 +1012,13 @@ function AdminView({
 
   useEffect(() => {
     admin.fetchStats()
-  }, [admin])
+  }, [admin.fetchStats])
 
-  const handleTabChange = (tab: 'dashboard' | 'products' | 'add') => {
+  const handleTabChange = (tab: 'dashboard' | 'products' | 'add' | 'labels') => {
     setActiveTab(tab)
     if (tab === 'dashboard') navigate('/admin')
     else if (tab === 'products') navigate('/admin/products')
+    else if (tab === 'labels') navigate('/admin/labels')
     else navigate('/admin/add')
   }
 
@@ -1039,6 +1053,13 @@ function AdminView({
         >
           <Plus size={14} /> Add Product
         </button>
+        <button
+          type="button"
+          className={`admin-tab ${activeTab === 'labels' ? 'is-active' : ''}`}
+          onClick={() => handleTabChange('labels')}
+        >
+          <Tags size={14} /> Labels
+        </button>
       </div>
 
       {admin.error && <div className="admin-error">{admin.error}</div>}
@@ -1058,14 +1079,25 @@ function AdminView({
           products={products}
           onDelete={admin.deleteProduct}
           onRefresh={async () => { await admin.fetchStats(); await refetchProducts() }}
+          onAddStock={admin.addStock}
         />
       )}
 
       {activeTab === 'add' && (
         <AdminAddProduct
-          categories={categories}
+          labels={labels}
           onCreate={admin.createProduct}
           onSuccess={() => { refetchProducts(); navigate('/admin/products') }}
+        />
+      )}
+
+      {activeTab === 'labels' && (
+        <AdminLabels
+          labels={labels}
+          onCreate={admin.createLabel}
+          onUpdate={admin.updateLabel}
+          onDelete={admin.deleteLabel}
+          onRefresh={async () => { await refetchLabels() }}
         />
       )}
     </section>
@@ -1087,7 +1119,7 @@ function AdminDashboard({ stats }: { stats: import('./lib/useAdmin').AdminStats 
           <div className="stat-icon"><DollarSign size={20} /></div>
           <div className="stat-content">
             <span className="stat-label">Revenue</span>
-            <strong className="stat-value">${stats.totalRevenue.toLocaleString()}</strong>
+            <strong className="stat-value">{stats.totalRevenue.toLocaleString()} DT</strong>
           </div>
         </div>
         <div className="stat-card">
@@ -1118,7 +1150,7 @@ function AdminDashboard({ stats }: { stats: import('./lib/useAdmin').AdminStats 
               </div>
               <div className="admin-list-meta">
                 <span className={`order-status status-${order.status}`}>{order.status}</span>
-                <strong>${order.total.toLocaleString()}</strong>
+                <strong>{order.total.toLocaleString()} DT</strong>
               </div>
             </div>
           ))}
@@ -1139,7 +1171,7 @@ function AdminDashboard({ stats }: { stats: import('./lib/useAdmin').AdminStats 
               </div>
               <div className="admin-list-main">
                 <strong>{product.title}</strong>
-                <span>${product.price.toLocaleString()} · {product.stock} in stock</span>
+                <span>{product.price.toLocaleString()} DT · {product.stock} in stock</span>
               </div>
             </div>
           ))}
@@ -1153,12 +1185,15 @@ function AdminProducts({
   products,
   onDelete,
   onRefresh,
+  onAddStock,
 }: {
   products: Product[]
   onDelete: (id: string) => Promise<boolean>
   onRefresh: () => Promise<void>
+  onAddStock?: (id: string, amount: number) => Promise<boolean>
 }) {
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [addingStock, setAddingStock] = useState<string | null>(null)
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this product?')) return
@@ -1168,13 +1203,21 @@ function AdminProducts({
     setDeleting(null)
   }
 
+  const handleAddStock = async (id: string) => {
+    if (!onAddStock) return
+    setAddingStock(id)
+    const ok = await onAddStock(id, 10)
+    if (ok) onRefresh()
+    setAddingStock(null)
+  }
+
   return (
     <div className="admin-products-table">
       <div className="table-header">
         <span>Product</span>
         <span>Price</span>
         <span>Stock</span>
-        <span>Category</span>
+        <span>Glow</span>
         <span>Actions</span>
       </div>
       {products.map(product => (
@@ -1192,13 +1235,24 @@ function AdminProducts({
               <span>{product.subtitle}</span>
             </div>
           </div>
-          <span className="table-cell">${product.price.toLocaleString()}</span>
+          <span className="table-cell">{product.price.toLocaleString()} DT</span>
           <span className="table-cell">{product.stock}</span>
           <span className="table-cell">{product.glow}</span>
           <div className="table-actions">
             <Link to={`/product/${product.id}`} className="icon-button small" title="View">
               <Eye size={14} />
             </Link>
+            {onAddStock && (
+              <button
+                type="button"
+                className="icon-button small"
+                title="Add 10 Stock"
+                disabled={addingStock === product.id}
+                onClick={() => handleAddStock(product.id)}
+              >
+                <Plus size={14} />
+              </button>
+            )}
             <button
               type="button"
               className="icon-button small danger"
@@ -1216,11 +1270,11 @@ function AdminProducts({
 }
 
 function AdminAddProduct({
-  categories,
+  labels,
   onCreate,
   onSuccess,
 }: {
-  categories: Array<{ id: string; name: string; slug: string }>
+  labels: Array<{ id: string; name: string; slug: string }>
   onCreate: (form: ProductForm, imageFile: File | null) => Promise<boolean>
   onSuccess: () => void
 }) {
@@ -1232,7 +1286,7 @@ function AdminAddProduct({
     price: '',
     glow: 'white',
     size: 'md',
-    category_id: '',
+    label_ids: [],
     stock: '10',
     is_trending: false,
     image_url: '',
@@ -1246,6 +1300,15 @@ function AdminAddProduct({
 
   const updateField = (field: keyof ProductForm, value: string | boolean) => {
     setForm(f => ({ ...f, [field]: value }))
+  }
+
+  const toggleLabel = (labelId: string) => {
+    setForm(f => ({
+      ...f,
+      label_ids: f.label_ids.includes(labelId)
+        ? f.label_ids.filter(id => id !== labelId)
+        : [...f.label_ids, labelId],
+    }))
   }
 
   const handleFileSelect = (file: File) => {
@@ -1325,7 +1388,7 @@ function AdminAddProduct({
 
           <div className="field-row three-up">
             <div>
-              <label className="field-label">Price (USD)</label>
+              <label className="field-label">Price (TND)</label>
               <input
                 className="field-input"
                 type="number"
@@ -1349,17 +1412,19 @@ function AdminAddProduct({
               />
             </div>
             <div>
-              <label className="field-label">Category</label>
-              <select
-                className="field-input"
-                value={form.category_id}
-                onChange={e => updateField('category_id', e.target.value)}
-              >
-                <option value="">None</option>
-                {categories.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+              <label className="field-label">Labels</label>
+              <div className="chip-group">
+                {labels.map(l => (
+                  <button
+                    key={l.id}
+                    type="button"
+                    className={`chip-button ${form.label_ids.includes(l.id) ? 'is-active' : ''}`}
+                    onClick={() => toggleLabel(l.id)}
+                  >
+                    {l.name}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
           </div>
 
@@ -1473,6 +1538,136 @@ function AdminAddProduct({
   )
 }
 
+function AdminLabels({
+  labels,
+  onCreate,
+  onUpdate,
+  onDelete,
+  onRefresh,
+}: {
+  labels: Array<{ id: string; name: string; slug: string }>
+  onCreate: (name: string, slug: string) => Promise<boolean>
+  onUpdate: (id: string, name: string, slug: string) => Promise<boolean>
+  onDelete: (id: string) => Promise<boolean>
+  onRefresh: () => Promise<void>
+}) {
+  const [newName, setNewName] = useState('')
+  const [newSlug, setNewSlug] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editSlug, setEditSlug] = useState('')
+  const [deleting, setDeleting] = useState<string | null>(null)
+
+  const handleCreate = async () => {
+    if (!newName.trim() || !newSlug.trim()) return
+    const ok = await onCreate(newName.trim(), newSlug.trim())
+    if (ok) {
+      setNewName('')
+      setNewSlug('')
+      onRefresh()
+    }
+  }
+
+  const handleUpdate = async (id: string) => {
+    if (!editName.trim() || !editSlug.trim()) return
+    const ok = await onUpdate(id, editName.trim(), editSlug.trim())
+    if (ok) {
+      setEditingId(null)
+      onRefresh()
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this label?')) return
+    setDeleting(id)
+    const ok = await onDelete(id)
+    if (ok) onRefresh()
+    setDeleting(null)
+  }
+
+  const startEdit = (label: typeof labels[number]) => {
+    setEditingId(label.id)
+    setEditName(label.name)
+    setEditSlug(label.slug)
+  }
+
+  return (
+    <div className="admin-panel">
+      <h3 style={{ marginBottom: 16 }}>Labels</h3>
+
+      <div className="admin-form-inline">
+        <input
+          className="field-input"
+          placeholder="Label name"
+          value={newName}
+          onChange={e => setNewName(e.target.value)}
+        />
+        <input
+          className="field-input"
+          placeholder="e.g. street-signs"
+          value={newSlug}
+          onChange={e => setNewSlug(e.target.value)}
+        />
+        <button className="button-primary" type="button" onClick={handleCreate} style={{ minHeight: 48, padding: '0 20px' }}>
+          Add
+        </button>
+      </div>
+
+      {labels.length === 0 && <p className="admin-empty">No labels yet.</p>}
+
+      {labels.map(label => (
+        <div key={label.id} className="admin-list-row">
+          {editingId === label.id ? (
+            <>
+              <div className="admin-form-inline" style={{ flex: 1, gap: 8 }}>
+                <input
+                  className="field-input"
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  style={{ minHeight: 36, fontSize: '0.82rem' }}
+                />
+                <input
+                  className="field-input"
+                  value={editSlug}
+                  onChange={e => setEditSlug(e.target.value)}
+                  style={{ minHeight: 36, fontSize: '0.82rem' }}
+                />
+                <button className="button-primary" type="button" onClick={() => handleUpdate(label.id)} style={{ minHeight: 36, padding: '0 12px', fontSize: '0.75rem' }}>
+                  Save
+                </button>
+                <button className="button-secondary" type="button" onClick={() => setEditingId(null)} style={{ minHeight: 36, padding: '0 12px', fontSize: '0.75rem' }}>
+                  Cancel
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="admin-list-main">
+                <strong>{label.name}</strong>
+                <span>/{label.slug}</span>
+              </div>
+              <div className="table-actions">
+                <button type="button" className="icon-button small" onClick={() => startEdit(label)} title="Edit">
+                  <Eye size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button small danger"
+                  disabled={deleting === label.id}
+                  onClick={() => handleDelete(label.id)}
+                  title="Delete"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function CheckoutBlock({ title, step, children }: { title: string; step: string; children: React.ReactNode }) {
   return (
     <section className="checkout-block">
@@ -1504,7 +1699,7 @@ function CollectionCard({
         <h3>{product.title}</h3>
         <p>{product.subtitle}</p>
         <div className="collection-footer-row">
-          <strong>${product.price.toLocaleString()}</strong>
+          <strong>{product.price.toLocaleString()} DT</strong>
           <button type="button" className="text-link compact">
             View <ArrowRight size={14} />
           </button>
@@ -1550,10 +1745,10 @@ function SiteFooter() {
     <footer className="site-footer">
       <div className="footer-inner">
         <div className="footer-brand">
-          <span>SYGN<span style={{ color: 'var(--glow-pink)' }}>.</span></span>
+          <span>SY<span className="brand-arabic">ڨ</span>N<span style={{ color: 'var(--glow-pink)' }}>.</span></span>
           <p>Street-grade signage for modern spaces. Handcrafted, precision-engineered, built to last.</p>
         </div>
-        <p className="footer-copyright">&copy; 2024 SYGN STUDIOS. ALL RIGHTS RESERVED.</p>
+        <p className="footer-copyright">&copy; 2024 SY<span className="brand-arabic">ڨ</span>N STUDIOS. ALL RIGHTS RESERVED.</p>
       </div>
     </footer>
   )

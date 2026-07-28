@@ -4,13 +4,13 @@ interface Product {
   signText: string; signType: 'street' | 'highway' | 'custom'; new?: boolean;
 }
 const PRODUCTS: Product[] = [
-  { id: 'blonde-nostalgia', name: 'Blonde Nostalgia', price: '$89', tag: 'LIMITED',
+  { id: 'blonde-nostalgia', name: 'Blonde Nostalgia', price: '89 DT', tag: 'LIMITED',
     tagColor: '#CCFF00', accentColor: '#CCFF00', bgColor: 'linear-gradient(145deg,#0d1209,#182208)',
     signText: 'BLONDE', signType: 'highway' },
-  { id: 'sygn-core-logo', name: 'SYGN Core Logo', price: '$65', tag: 'BESTSELLER',
+  { id: 'sygn-core-logo', name: 'SYGN Core Logo', price: '65 DT', tag: 'BESTSELLER',
     tagColor: '#007AFF', accentColor: '#ffffff', bgColor: 'linear-gradient(145deg,#0a0a0a,#161616)',
     signText: 'SYGN', signType: 'custom' },
-  { id: 'cmiygl-blue', name: 'CMIYGL Blue', price: '$95', tag: 'NEW DROP',
+  { id: 'cmiygl-blue', name: 'CMIYGL Blue', price: '95 DT', tag: 'NEW DROP',
     tagColor: '#007AFF', accentColor: '#007AFF', bgColor: 'linear-gradient(145deg,#030d1f,#05173a)',
     signText: 'CMIYGL', signType: 'street', new: true },
 ]

@@ -10,13 +10,12 @@ export interface Product {
   glow: string
   size: string
   image_url: string | null
-  category_id: string | null
   stock: number
   is_trending: boolean
   created_at: string
 }
 
-export interface Category {
+export interface Label {
   id: string
   name: string
   slug: string
@@ -24,7 +23,8 @@ export interface Category {
 
 export function useProducts() {
   const [products, setProducts] = useState<Product[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
+  const [labels, setLabels] = useState<Label[]>([])
+  const [productLabels, setProductLabels] = useState<Record<string, string[]>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -43,19 +43,33 @@ export function useProducts() {
     setLoading(false)
   }, [])
 
-  const fetchCategories = useCallback(async () => {
+  const fetchLabels = useCallback(async () => {
     const { data } = await supabase
-      .from('categories')
+      .from('labels')
       .select('*')
       .order('name')
 
-    setCategories(data ?? [])
+    setLabels(data ?? [])
+  }, [])
+
+  const fetchProductLabels = useCallback(async () => {
+    const { data } = await supabase
+      .from('product_labels')
+      .select('product_id, label_id')
+
+    const map: Record<string, string[]> = {}
+    for (const row of data ?? []) {
+      if (!map[row.product_id]) map[row.product_id] = []
+      map[row.product_id].push(row.label_id)
+    }
+    setProductLabels(map)
   }, [])
 
   useEffect(() => {
     fetchProducts()
-    fetchCategories()
-  }, [fetchProducts, fetchCategories])
+    fetchLabels()
+    fetchProductLabels()
+  }, [fetchProducts, fetchLabels, fetchProductLabels])
 
   const getProduct = useCallback(async (id: string): Promise<Product | null> => {
     const { data } = await supabase
@@ -66,23 +80,31 @@ export function useProducts() {
     return data
   }, [])
 
-  const getProductsByCategory = useCallback(async (categorySlug: string): Promise<Product[]> => {
-    const { data: cat } = await supabase
-      .from('categories')
+  const getProductsByLabel = useCallback(async (labelSlug: string): Promise<Product[]> => {
+    const { data: label } = await supabase
+      .from('labels')
       .select('id')
-      .eq('slug', categorySlug)
+      .eq('slug', labelSlug)
       .single()
 
-    if (!cat) return []
+    if (!label) return []
 
+    const { data: links } = await supabase
+      .from('product_labels')
+      .select('product_id')
+      .eq('label_id', label.id)
+
+    if (!links || links.length === 0) return []
+
+    const ids = links.map(l => l.product_id)
     const { data } = await supabase
       .from('products')
       .select('*')
-      .eq('category_id', cat.id)
+      .in('id', ids)
       .order('created_at', { ascending: false })
 
     return data ?? []
   }, [])
 
-  return { products, categories, loading, error, getProduct, getProductsByCategory, refetch: fetchProducts }
+  return { products, labels, productLabels, loading, error, getProduct, getProductsByLabel, refetch: fetchProducts, refetchLabels: fetchLabels }
 }

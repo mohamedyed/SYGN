@@ -1,7 +1,7 @@
 export interface Database {
   public: {
     Tables: {
-      categories: {
+      labels: {
         Row: {
           id: string
           name: string
@@ -25,7 +25,6 @@ export interface Database {
           glow: string
           size: string
           image_url: string | null
-          category_id: string | null
           stock: number
           is_trending: boolean
           created_at: string
@@ -39,10 +38,19 @@ export interface Database {
           glow?: string
           size?: string
           image_url?: string | null
-          category_id?: string | null
           stock?: number
           is_trending?: boolean
           created_at?: string
+        }
+      }
+      product_labels: {
+        Row: {
+          product_id: string
+          label_id: string
+        }
+        Insert: {
+          product_id: string
+          label_id: string
         }
       }
       profiles: {

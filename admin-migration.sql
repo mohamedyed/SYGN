@@ -39,9 +39,11 @@ DO $$ BEGIN
   DROP POLICY IF EXISTS "Admins can insert products" ON products;
   DROP POLICY IF EXISTS "Admins can update products" ON products;
   DROP POLICY IF EXISTS "Admins can delete products" ON products;
-  DROP POLICY IF EXISTS "Admins can insert categories" ON categories;
-  DROP POLICY IF EXISTS "Admins can update categories" ON categories;
-  DROP POLICY IF EXISTS "Admins can delete categories" ON categories;
+  DROP POLICY IF EXISTS "Admins can insert labels" ON labels;
+  DROP POLICY IF EXISTS "Admins can update labels" ON labels;
+  DROP POLICY IF EXISTS "Admins can delete labels" ON labels;
+  DROP POLICY IF EXISTS "Admins can insert product_labels" ON product_labels;
+  DROP POLICY IF EXISTS "Admins can delete product_labels" ON product_labels;
   DROP POLICY IF EXISTS "Admins can view all orders" ON orders;
   DROP POLICY IF EXISTS "Admins can view all order items" ON order_items;
   DROP POLICY IF EXISTS "Admins can view all profiles" ON profiles;
@@ -74,14 +76,21 @@ CREATE POLICY "Admins can update products" ON products
 CREATE POLICY "Admins can delete products" ON products
   FOR DELETE USING (public.is_admin());
 
--- 8. Admin RLS policies for categories
-CREATE POLICY "Admins can insert categories" ON categories
+-- 8. Admin RLS policies for labels
+CREATE POLICY "Admins can insert labels" ON labels
   FOR INSERT WITH CHECK (public.is_admin());
 
-CREATE POLICY "Admins can update categories" ON categories
+CREATE POLICY "Admins can update labels" ON labels
   FOR UPDATE USING (public.is_admin());
 
-CREATE POLICY "Admins can delete categories" ON categories
+CREATE POLICY "Admins can delete labels" ON labels
+  FOR DELETE USING (public.is_admin());
+
+-- 8b. Admin RLS policies for product_labels
+CREATE POLICY "Admins can insert product_labels" ON product_labels
+  FOR INSERT WITH CHECK (public.is_admin());
+
+CREATE POLICY "Admins can delete product_labels" ON product_labels
   FOR DELETE USING (public.is_admin());
 
 -- 9. Admin can view all orders

@@ -31,7 +31,7 @@ export interface ProductForm {
   price: string
   glow: string
   size: string
-  category_id: string
+  label_ids: string[]
   stock: string
   is_trending: boolean
   image_url: string
@@ -103,6 +103,14 @@ export function useAdmin() {
     return data.publicUrl
   }, [])
 
+  const setProductLabels = useCallback(async (productId: string, labelIds: string[]) => {
+    await supabase.from('product_labels').delete().eq('product_id', productId)
+    if (labelIds.length > 0) {
+      const rows = labelIds.map(label_id => ({ product_id: productId, label_id }))
+      await supabase.from('product_labels').insert(rows)
+    }
+  }, [])
+
   const createProduct = useCallback(async (form: ProductForm, imageFile: File | null): Promise<boolean> => {
     setError(null)
     try {
@@ -114,29 +122,33 @@ export function useAdmin() {
         imageUrl = uploaded
       }
 
-      const { error: insertError } = await supabase.from('products').insert({
+      const { data: product, error: insertError } = await supabase.from('products').insert({
         title: form.title,
         subtitle: form.subtitle || null,
         description: form.description || null,
         price: parseFloat(form.price),
         glow: form.glow,
         size: form.size,
-        category_id: form.category_id || null,
         stock: parseInt(form.stock) || 0,
         is_trending: form.is_trending,
         image_url: imageUrl,
-      })
+      }).select().single()
 
       if (insertError) {
         setError(insertError.message)
         return false
       }
+
+      if (form.label_ids.length > 0) {
+        await setProductLabels(product.id, form.label_ids)
+      }
+
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create product')
       return false
     }
-  }, [uploadImage])
+  }, [uploadImage, setProductLabels])
 
   const deleteProduct = useCallback(async (id: string): Promise<boolean> => {
     setError(null)
@@ -157,7 +169,6 @@ export function useAdmin() {
     if (updates.price !== undefined) payload.price = parseFloat(updates.price)
     if (updates.glow !== undefined) payload.glow = updates.glow
     if (updates.size !== undefined) payload.size = updates.size
-    if (updates.category_id !== undefined) payload.category_id = updates.category_id || null
     if (updates.stock !== undefined) payload.stock = parseInt(updates.stock)
     if (updates.is_trending !== undefined) payload.is_trending = updates.is_trending
     if (updates.image_url !== undefined) payload.image_url = updates.image_url || null
@@ -165,6 +176,66 @@ export function useAdmin() {
     const { error: updateError } = await supabase.from('products').update(payload).eq('id', id)
     if (updateError) {
       setError(updateError.message)
+      return false
+    }
+
+    if (updates.label_ids !== undefined) {
+      await setProductLabels(id, updates.label_ids)
+    }
+
+    return true
+  }, [setProductLabels])
+
+  const addStock = useCallback(async (id: string, amount: number): Promise<boolean> => {
+    setError(null)
+    const { data: product } = await supabase
+      .from('products')
+      .select('stock')
+      .eq('id', id)
+      .single()
+
+    if (!product) {
+      setError('Product not found')
+      return false
+    }
+
+    const { error: updateError } = await supabase
+      .from('products')
+      .update({ stock: product.stock + amount })
+      .eq('id', id)
+
+    if (updateError) {
+      setError(updateError.message)
+      return false
+    }
+    return true
+  }, [])
+
+  const createLabel = useCallback(async (name: string, slug: string): Promise<boolean> => {
+    setError(null)
+    const { error: insertError } = await supabase.from('labels').insert({ name, slug })
+    if (insertError) {
+      setError(insertError.message)
+      return false
+    }
+    return true
+  }, [])
+
+  const updateLabel = useCallback(async (id: string, name: string, slug: string): Promise<boolean> => {
+    setError(null)
+    const { error: updateError } = await supabase.from('labels').update({ name, slug }).eq('id', id)
+    if (updateError) {
+      setError(updateError.message)
+      return false
+    }
+    return true
+  }, [])
+
+  const deleteLabel = useCallback(async (id: string): Promise<boolean> => {
+    setError(null)
+    const { error: deleteError } = await supabase.from('labels').delete().eq('id', id)
+    if (deleteError) {
+      setError(deleteError.message)
       return false
     }
     return true
@@ -178,6 +249,10 @@ export function useAdmin() {
     createProduct,
     deleteProduct,
     updateProduct,
+    addStock,
+    createLabel,
+    updateLabel,
+    deleteLabel,
     uploadImage,
   }
 }
