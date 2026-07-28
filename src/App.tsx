@@ -551,7 +551,10 @@ function ProductView({
     )
   }
 
+  const isOutOfStock = product.stock <= 0
+
   const handleAddToCart = () => {
+    if (isOutOfStock) return
     for (let i = 0; i < qty; i++) {
       onAddToCart({
         productId: product.id,
@@ -596,23 +599,23 @@ function ProductView({
             {product.description || 'Hand-crafted high-grade aluminum. Precision-engineered light distribution. 50,000 hour lifespan. A statement piece designed for modern interiors.'}
           </p>
           <div className="qty-row">
-            <button type="button" className="qty-btn" onClick={() => setQty(q => Math.max(1, q - 1))}>
+            <button type="button" className="qty-btn" disabled={isOutOfStock} onClick={() => setQty(q => Math.max(1, q - 1))}>
               <Minus size={14} />
             </button>
-            <span className="qty-value">{qty}</span>
-            <button type="button" className="qty-btn" onClick={() => setQty(q => q + 1)}>
+            <span className="qty-value">{isOutOfStock ? 0 : qty}</span>
+            <button type="button" className="qty-btn" disabled={isOutOfStock || qty >= product.stock} onClick={() => setQty(q => q + 1)}>
               <Plus size={14} />
             </button>
           </div>
           <div className="product-actions">
-            <button className="button-primary" type="button" onClick={handleAddToCart}>
-              Add to Bag <ArrowRight size={16} />
+            <button className="button-primary" type="button" onClick={handleAddToCart} disabled={isOutOfStock}>
+              {isOutOfStock ? 'Out of Stock' : 'Add to Bag'} {isOutOfStock ? null : <ArrowRight size={16} />}
             </button>
           </div>
           <div className="product-meta">
             <div>
               <span>Availability</span>
-              <strong>{product.stock > 0 ? 'In Stock' : 'Out of Stock'}</strong>
+              <strong className={isOutOfStock ? 'stock-out' : ''}>{isOutOfStock ? 'Out of Stock' : `In Stock (${product.stock} available)`}</strong>
             </div>
             <div>
               <span>Shipping</span>
@@ -635,6 +638,7 @@ function CheckoutView({
   const navigate = useNavigate()
   const [submitting, setSubmitting] = useState(false)
   const [orderPlaced, setOrderPlaced] = useState(false)
+  const [stockError, setStockError] = useState('')
   const [shipping, setShipping] = useState({
     name: '', email: user?.email ?? '', address: '', city: '', state: '', zip: '',
   })
@@ -649,8 +653,33 @@ function CheckoutView({
   const handlePlaceOrder = async () => {
     if (cart.items.length === 0) return
     setSubmitting(true)
+    setStockError('')
 
     try {
+      const productIds = cart.items.map(i => i.productId)
+      const { data: products, error: fetchError } = await supabase
+        .from('products')
+        .select('id, title, stock')
+        .in('id', productIds)
+
+      if (fetchError) throw fetchError
+
+      const stockMap = new Map(products?.map(p => [p.id, p]) ?? [])
+      const outOfStock: string[] = []
+
+      for (const item of cart.items) {
+        const product = stockMap.get(item.productId)
+        if (!product || product.stock < item.quantity) {
+          outOfStock.push(item.title)
+        }
+      }
+
+      if (outOfStock.length > 0) {
+        setStockError(`Insufficient stock: ${outOfStock.join(', ')}. Please remove these items and try again.`)
+        setSubmitting(false)
+        return
+      }
+
       const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert({
@@ -677,6 +706,16 @@ function CheckoutView({
 
       const { error: itemsError } = await supabase.from('order_items').insert(items)
       if (itemsError) throw itemsError
+
+      for (const item of cart.items) {
+        const product = stockMap.get(item.productId)
+        if (product) {
+          await supabase
+            .from('products')
+            .update({ stock: product.stock - item.quantity })
+            .eq('id', item.productId)
+        }
+      }
 
       cart.clearCart()
       setOrderPlaced(true)
@@ -828,6 +867,7 @@ function CheckoutView({
             <span>Total</span>
             <strong>USD ${cart.total.toLocaleString()}.00</strong>
           </div>
+          {stockError && <p className="auth-error" style={{ marginBottom: 12 }}>{stockError}</p>}
           <button
             className="button-primary wide"
             type="button"
@@ -1457,7 +1497,8 @@ function CollectionCard({
     <article className={`collection-card ${index === 0 ? 'collection-featured' : ''}`} onClick={() => navigate(`/product/${product.id}`)}>
       <div className="collection-art">
         {product.image_url && <img src={product.image_url} alt={product.title} className="collection-card-image" />}
-        {product.stock <= 10 && <span className="collection-badge">LIMITED</span>}
+        {product.stock <= 0 && <span className="collection-badge badge-oos">OUT OF STOCK</span>}
+        {product.stock > 0 && product.stock <= 10 && <span className="collection-badge">LIMITED</span>}
       </div>
       <div className="collection-body">
         <h3>{product.title}</h3>

@@ -209,7 +209,14 @@ a {
   color: var(--bg-deep);
 }
 
-.button-primary:hover {
+.button-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.button-primary:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 8px 30px rgba(240, 237, 232, 0.15);
 }
@@ -1060,6 +1067,15 @@ a {
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+.collection-art .badge-oos {
+  background: var(--glow-red);
+  color: #fff;
+}
+
+.stock-out {
+  color: var(--glow-red);
 }
 
 .collection-warm .collection-art { background: linear-gradient(135deg, #2a1f14 0%, #1a1410 100%); }
@@ -1925,6 +1941,11 @@ a {
   background: rgba(240, 237, 232, 0.04);
   color: var(--ink-soft);
   transition: all 0.15s ease;
+}
+
+.qty-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .qty-btn:hover {
