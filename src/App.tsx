@@ -7,6 +7,7 @@ import {
   Moon,
   ShoppingBag,
   Sun,
+  Truck,
   User,
   Plus,
   Minus,
@@ -30,6 +31,7 @@ import { useAuth } from './lib/useAuth'
 import { useCart } from './lib/useCart'
 import { useProducts } from './lib/useProducts'
 import { useAdmin } from './lib/useAdmin'
+import { useShippingFee } from './lib/useShippingFee'
 import type { Product } from './lib/useProducts'
 import type { ProductForm } from './lib/useAdmin'
 import { GLOW_OPTIONS, SIZE_OPTIONS } from './lib/useAdmin'
@@ -663,12 +665,15 @@ function CheckoutView({
   user: { id: string; email?: string } | null
 }) {
   const navigate = useNavigate()
+  const { fee, fetchFee } = useShippingFee()
   const [submitting, setSubmitting] = useState(false)
   const [orderPlaced, setOrderPlaced] = useState(false)
   const [stockError, setStockError] = useState('')
   const [shipping, setShipping] = useState({
     name: '', email: user?.email ?? '', phone: '', address: '', city: '', state: '', zip: '',
   })
+
+  useEffect(() => { fetchFee() }, [fetchFee])
 
   const isFormValid = shipping.name.trim().length > 1
     && shipping.email.includes('@')
@@ -710,7 +715,8 @@ function CheckoutView({
         .from('orders')
         .insert({
           user_id: user?.id ?? null,
-          total: 0,
+          total: fee,
+          shipping_fee: fee,
           shipping_name: shipping.name.trim(),
           shipping_email: shipping.email.trim(),
           shipping_phone: shipping.phone.trim(),
@@ -897,12 +903,12 @@ function CheckoutView({
           ))}
           <div className="summary-lines">
             <div><span>Subtotal</span><strong>{cart.total.toLocaleString()} DT</strong></div>
-            <div><span>Shipping</span><strong>Free</strong></div>
+            <div><span>Shipping</span><strong>{fee > 0 ? `${fee.toLocaleString()} DT` : 'Free'}</strong></div>
             <div><span>Taxes</span><strong>0 DT</strong></div>
           </div>
           <div className="summary-total">
             <span>Total</span>
-            <strong>{cart.total.toLocaleString()} DT</strong>
+            <strong>{(cart.total + fee).toLocaleString()} DT</strong>
           </div>
           {stockError && <p className="auth-error" style={{ marginBottom: 12 }}>{stockError}</p>}
           <button
@@ -1024,12 +1030,14 @@ function AdminView({
   const location = useLocation()
   const navigate = useNavigate()
   const admin = useAdmin()
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'add' | 'labels'>('dashboard')
+  const shippingFee = useShippingFee()
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'add' | 'labels' | 'shipping'>('dashboard')
 
   const tabFromUrl = useCallback(() => {
     if (location.pathname === '/admin/products') return 'products' as const
     if (location.pathname === '/admin/add') return 'add' as const
     if (location.pathname === '/admin/labels') return 'labels' as const
+    if (location.pathname === '/admin/shipping') return 'shipping' as const
     return 'dashboard' as const
   }, [location.pathname])
 
@@ -1039,13 +1047,15 @@ function AdminView({
 
   useEffect(() => {
     admin.fetchStats()
-  }, [admin.fetchStats])
+    shippingFee.fetchFee()
+  }, [admin.fetchStats, shippingFee.fetchFee])
 
-  const handleTabChange = (tab: 'dashboard' | 'products' | 'add' | 'labels') => {
+  const handleTabChange = (tab: 'dashboard' | 'products' | 'add' | 'labels' | 'shipping') => {
     setActiveTab(tab)
     if (tab === 'dashboard') navigate('/admin')
     else if (tab === 'products') navigate('/admin/products')
     else if (tab === 'labels') navigate('/admin/labels')
+    else if (tab === 'shipping') navigate('/admin/shipping')
     else navigate('/admin/add')
   }
 
@@ -1087,6 +1097,13 @@ function AdminView({
         >
           <Tags size={14} /> Labels
         </button>
+        <button
+          type="button"
+          className={`admin-tab ${activeTab === 'shipping' ? 'is-active' : ''}`}
+          onClick={() => handleTabChange('shipping')}
+        >
+          <Truck size={14} /> Shipping
+        </button>
       </div>
 
       {admin.error && <div className="admin-error">{admin.error}</div>}
@@ -1125,6 +1142,15 @@ function AdminView({
           onUpdate={admin.updateLabel}
           onDelete={admin.deleteLabel}
           onRefresh={async () => { await refetchLabels() }}
+        />
+      )}
+
+      {activeTab === 'shipping' && (
+        <AdminShippingFee
+          fee={shippingFee.fee}
+          loading={shippingFee.loading}
+          onUpdate={shippingFee.updateFee}
+          onRefresh={shippingFee.fetchFee}
         />
       )}
     </section>
@@ -1691,6 +1717,68 @@ function AdminLabels({
           )}
         </div>
       ))}
+    </div>
+  )
+}
+
+function AdminShippingFee({
+  fee,
+  loading,
+  onUpdate,
+  onRefresh,
+}: {
+  fee: number
+  loading: boolean
+  onUpdate: (amount: number) => Promise<boolean>
+  onRefresh: () => Promise<void>
+}) {
+  const [value, setValue] = useState(String(fee))
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => { setValue(String(fee)) }, [fee])
+
+  const handleSave = async () => {
+    setSaving(true)
+    setMsg('')
+    const amount = parseFloat(value)
+    if (isNaN(amount) || amount < 0) {
+      setMsg('Enter a valid amount')
+      setSaving(false)
+      return
+    }
+    const ok = await onUpdate(amount)
+    if (ok) {
+      setMsg('Saved')
+      await onRefresh()
+    } else {
+      setMsg('Failed to save')
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div className="admin-panel" style={{ maxWidth: 480 }}>
+      <h3 style={{ marginBottom: 16 }}>Shipping Fee</h3>
+      <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', marginBottom: 16 }}>
+        Set the flat shipping fee applied to all orders. Set to 0 for free shipping.
+      </p>
+      <div className="admin-form-inline">
+        <input
+          className="field-input"
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="0.00"
+          value={loading ? 'Loading...' : value}
+          onChange={e => setValue(e.target.value)}
+          style={{ maxWidth: 160 }}
+        />
+        <button className="button-primary" type="button" onClick={handleSave} disabled={saving || loading} style={{ minHeight: 48, padding: '0 24px' }}>
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+      {msg && <p style={{ fontSize: '0.82rem', marginTop: 8, color: msg === 'Saved' ? 'var(--glow-green)' : 'var(--glow-red)' }}>{msg}</p>}
     </div>
   )
 }

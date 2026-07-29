@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS orders (
   user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   status text NOT NULL DEFAULT 'pending',
   total numeric(10, 2) NOT NULL,
+  shipping_fee numeric(10, 2) NOT NULL DEFAULT 0,
   shipping_name text,
   shipping_email text,
   shipping_phone text,
@@ -106,6 +107,29 @@ CREATE TABLE IF NOT EXISTS reviews (
   comment text,
   created_at timestamptz DEFAULT now()
 );
+
+-- 8. SETTINGS (key-value store — e.g. shipping_fee)
+CREATE TABLE IF NOT EXISTS settings (
+  key text PRIMARY KEY,
+  value text NOT NULL,
+  updated_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+
+-- Admins can read/write settings; the checkout hook reads publicly
+DROP POLICY IF EXISTS "Anyone can read settings" ON settings;
+CREATE POLICY "Anyone can read settings" ON settings
+  FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Admins can write settings" ON settings;
+CREATE POLICY "Admins can write settings" ON settings
+  FOR ALL USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_admin = true)
+  );
+
+-- Seed defaults
+INSERT INTO settings (key, value) VALUES ('shipping_fee', '0')
+  ON CONFLICT (key) DO NOTHING;
 
 -- ============================================
 -- ROW LEVEL SECURITY
@@ -198,7 +222,7 @@ AS $$
   SELECT coalesce(sum(unit_price * quantity), 0) FROM order_items WHERE order_id = p_order_id;
 $$;
 
--- Prevent order total manipulation: auto-update total from order_items
+-- Prevent order total manipulation: auto-update total from order_items + shipping_fee
 CREATE OR REPLACE FUNCTION sync_order_total()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -207,7 +231,8 @@ AS $$
 BEGIN
   UPDATE orders SET total = (
     SELECT coalesce(sum(unit_price * quantity), 0) FROM order_items WHERE order_id = NEW.order_id
-  ) WHERE id = NEW.order_id;
+  ) + (SELECT coalesce(shipping_fee, 0) FROM orders WHERE id = NEW.order_id)
+  WHERE id = NEW.order_id;
   RETURN NEW;
 END;
 $$;
