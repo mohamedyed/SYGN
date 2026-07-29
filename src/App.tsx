@@ -667,11 +667,12 @@ function CheckoutView({
   const [orderPlaced, setOrderPlaced] = useState(false)
   const [stockError, setStockError] = useState('')
   const [shipping, setShipping] = useState({
-    name: '', email: user?.email ?? '', address: '', city: '', state: '', zip: '',
+    name: '', email: user?.email ?? '', phone: '', address: '', city: '', state: '', zip: '',
   })
 
   const isFormValid = shipping.name.trim().length > 1
     && shipping.email.includes('@')
+    && shipping.phone.trim().length >= 8
     && shipping.address.trim().length > 3
     && shipping.city.trim().length > 1
     && shipping.state.trim().length > 1
@@ -712,6 +713,7 @@ function CheckoutView({
           total: 0,
           shipping_name: shipping.name.trim(),
           shipping_email: shipping.email.trim(),
+          shipping_phone: shipping.phone.trim(),
           shipping_address: shipping.address.trim(),
           shipping_city: shipping.city.trim(),
           shipping_state: shipping.state.trim(),
@@ -814,6 +816,14 @@ function CheckoutView({
               placeholder="Email Address"
               value={shipping.email}
               onChange={e => setShipping(s => ({ ...s, email: e.target.value }))}
+            />
+            <input
+              className="field-input"
+              type="tel"
+              placeholder="Phone Number *"
+              value={shipping.phone}
+              onChange={e => setShipping(s => ({ ...s, phone: e.target.value }))}
+              required
             />
             {!user && (
               <p className="payment-note">Already have an account? <Link to="/auth" className="text-link">Sign in</Link></p>

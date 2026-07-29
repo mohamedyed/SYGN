@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS orders (
   total numeric(10, 2) NOT NULL,
   shipping_name text,
   shipping_email text,
+  shipping_phone text,
   shipping_address text,
   shipping_city text,
   shipping_state text,
