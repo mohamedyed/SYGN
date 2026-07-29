@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Lock,
   Moon,
-  Search,
   ShoppingBag,
   Sun,
   User,
@@ -318,6 +317,7 @@ function SiteHeader({
   onSignOut: () => void
 }) {
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [showMobileNav, setShowMobileNav] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
   const menuRef = useRef<HTMLDivElement>(null)
@@ -326,6 +326,7 @@ function SiteHeader({
 
   useEffect(() => {
     setShowUserMenu(false)
+    setShowMobileNav(false)
   }, [location.pathname])
 
   useEffect(() => {
@@ -356,8 +357,15 @@ function SiteHeader({
         </nav>
       </div>
       <div className="header-actions">
-        <button className="icon-button" type="button" aria-label="Search">
-          <Search size={18} strokeWidth={2} />
+        <button
+          className="mobile-nav-toggle"
+          type="button"
+          aria-label="Menu"
+          onClick={() => setShowMobileNav(!showMobileNav)}
+        >
+          <div className={`hamburger ${showMobileNav ? 'is-open' : ''}`}>
+            <span /><span /><span />
+          </div>
         </button>
         <Link to="/checkout" className="icon-button cart-button" aria-label="Cart">
           <ShoppingBag size={18} strokeWidth={2} />
@@ -393,6 +401,15 @@ function SiteHeader({
           {theme === 'dark' ? <Sun size={18} strokeWidth={2} /> : <Moon size={18} strokeWidth={2} />}
         </button>
       </div>
+      <div className={`mobile-nav ${showMobileNav ? 'is-open' : ''}`}>
+        <Link to="/" className={`nav-link ${isActive('/')}`}>Shop</Link>
+        <Link to="/collection" className={`nav-link ${isActive('/collection')}`}>Collections</Link>
+        {isAdmin && (
+          <Link to="/admin" className={`nav-link ${location.pathname.startsWith('/admin') ? 'is-active' : ''}`}>
+            <Shield size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />Admin
+          </Link>
+        )}
+      </div>
     </header>
   )
 }
@@ -420,7 +437,7 @@ function HomeView({
           <p>Street-grade signage for modern spaces. Walk through and find your sign.</p>
         </div>
 
-        <div style={{ textAlign: 'center' }}>
+        <div className="order-now-row">
           <Link to="/collection" className="button-primary">Order Now <ArrowRight size={16} /></Link>
         </div>
 

@@ -196,6 +196,89 @@ a {
   background: rgba(240, 237, 232, 0.08);
 }
 
+/* ─── MOBILE NAV ─── */
+
+.mobile-nav-toggle {
+  display: none;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  transition: color 0.2s ease;
+}
+
+.mobile-nav-toggle:hover {
+  color: var(--ink);
+}
+
+.hamburger {
+  width: 20px;
+  height: 16px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.hamburger span {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+  transition: all 0.25s ease;
+  transform-origin: center;
+}
+
+.hamburger.is-open span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.hamburger.is-open span:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger.is-open span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+.mobile-nav {
+  display: none;
+  position: fixed;
+  top: 64px;
+  left: 0;
+  right: 0;
+  z-index: 99;
+  padding: 16px;
+  background: rgba(10, 10, 12, 0.96);
+  backdrop-filter: blur(40px) saturate(1.6);
+  -webkit-backdrop-filter: blur(40px) saturate(1.6);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mobile-nav.is-open {
+  display: flex;
+}
+
+.mobile-nav .nav-link {
+  width: 100%;
+  justify-content: center;
+  padding: 14px 16px;
+  font-size: 1rem;
+}
+
+[data-theme="light"] .mobile-nav {
+  background: rgba(245, 240, 234, 0.96);
+  border-bottom-color: rgba(255, 255, 255, 0.5);
+}
+
+[data-theme="light"] .mobile-nav-toggle:hover {
+  color: var(--ink);
+}
+
 /* ─── BUTTONS ─── */
 
 .button-primary,
@@ -361,6 +444,14 @@ a {
   line-height: 1.6;
   max-width: 520px;
   margin: 0 auto;
+}
+
+.order-now-row {
+  text-align: center;
+  margin-top: -20px;
+  margin-bottom: 40px;
+  position: relative;
+  z-index: 2;
 }
 
 /* ─── LIVE BADGE ─── */
@@ -645,25 +736,27 @@ a {
   border-radius: 6px;
   margin-bottom: 10px;
   display: block;
-  object-fit: cover;
+  object-fit: contain;
   opacity: 0.92;
 }
 
 .collection-card-image {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   position: absolute;
   inset: 0;
   opacity: 0.6;
+  padding: 12px;
 }
 
 .hero-image {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   position: absolute;
   inset: 0;
+  padding: 24px;
 }
 
 /* ─── SIGN NEON GLOW VARIANTS ─── */
@@ -2184,6 +2277,10 @@ a {
     display: none;
   }
 
+  .mobile-nav-toggle {
+    display: flex;
+  }
+
   .streetscape {
     padding: 40px 16px 60px;
   }
@@ -2756,7 +2853,7 @@ a {
 .image-preview {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   border-radius: 12px;
   position: absolute;
   inset: 0;
