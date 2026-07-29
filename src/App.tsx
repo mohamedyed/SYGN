@@ -904,7 +904,6 @@ function CheckoutView({
           <div className="summary-lines">
             <div><span>Subtotal</span><strong>{cart.total.toLocaleString()} DT</strong></div>
             <div><span>Shipping</span><strong>{fee > 0 ? `${fee.toLocaleString()} DT` : 'Free'}</strong></div>
-            <div><span>Taxes</span><strong>0 DT</strong></div>
           </div>
           <div className="summary-total">
             <span>Total</span>

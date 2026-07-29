@@ -62,7 +62,8 @@ BEGIN
     new.id,
     new.email,
     coalesce(new.raw_user_meta_data ->> 'full_name', '')
-  );
+  )
+  ON CONFLICT (id) DO NOTHING;
   RETURN new;
 END;
 $$;
@@ -77,7 +78,6 @@ CREATE TABLE IF NOT EXISTS orders (
   user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   status text NOT NULL DEFAULT 'pending',
   total numeric(10, 2) NOT NULL,
-  shipping_fee numeric(10, 2) NOT NULL DEFAULT 0,
   shipping_name text,
   shipping_email text,
   shipping_phone text,
@@ -87,6 +87,9 @@ CREATE TABLE IF NOT EXISTS orders (
   shipping_zip text,
   created_at timestamptz DEFAULT now()
 );
+
+-- Add columns that may not exist yet on existing tables (schema evolves)
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_fee numeric(10, 2) NOT NULL DEFAULT 0;
 
 -- 6. ORDER ITEMS
 CREATE TABLE IF NOT EXISTS order_items (
