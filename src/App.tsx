@@ -20,9 +20,12 @@ import {
   Users,
   Eye,
   X,
+  PenSquare,
   LayoutDashboard,
   Shield,
   Tags,
+  ClipboardList,
+  CheckCircle,
 } from 'lucide-react'
 import './index.css'
 
@@ -272,7 +275,7 @@ function App() {
                   <div className="loading-spinner" />
                 </div>
               ) : auth.isAdmin ? (
-                <AdminView products={products} labels={labels} refetchProducts={refetch} refetchLabels={refetchLabels} />
+                <AdminView products={products} labels={labels} productLabels={productLabels} refetchProducts={refetch} refetchLabels={refetchLabels} />
               ) : (
                 <Navigate to="/auth" replace />
               )
@@ -570,6 +573,7 @@ function ProductView({
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [qty, setQty] = useState(1)
+  const [activeImage, setActiveImage] = useState(0)
   const product = products.find(p => p.id === id) ?? products[0]
 
   if (!product) {
@@ -603,8 +607,12 @@ function ProductView({
       <div className="product-layout">
         <div className="product-hero">
           <div className="hero-artwork" aria-hidden="true">
-            {product.image_url ? (
-              <img src={product.image_url} alt={product.title} className="hero-image" />
+            {(product.images.length > 0 ? product.images : product.image_url ? [product.image_url] : []).length > 0 ? (
+              <img
+                src={(product.images.length > 0 ? product.images : product.image_url ? [product.image_url] : [])[activeImage]}
+                alt={product.title}
+                className="hero-image"
+              />
             ) : (
               <div className={`hero-placeholder sign-glow-${product.glow}`}>
                 <span className="sign-text">{product.title}</span>
@@ -612,6 +620,20 @@ function ProductView({
             )}
             <div className="art-glow" />
           </div>
+          {(product.images.length > 0 || product.image_url) && (
+            <div className="hero-gallery">
+              {(product.images.length > 0 ? product.images : product.image_url ? [product.image_url] : []).map((url, i) => (
+                <button
+                  key={url}
+                  type="button"
+                  className={`gallery-thumb ${i === activeImage ? 'is-active' : ''}`}
+                  onClick={() => setActiveImage(i)}
+                >
+                  <img src={url} alt="" />
+                </button>
+              ))}
+            </div>
+          )}
           <div className="hero-badges">
             <span>{product.size.toUpperCase()}</span>
             {product.stock <= 10 && <span>LIMITED</span>}
@@ -632,9 +654,10 @@ function ProductView({
               <Minus size={14} />
             </button>
             <span className="qty-value">{isOutOfStock ? 0 : qty}</span>
-            <button type="button" className="qty-btn" disabled={isOutOfStock || qty >= product.stock} onClick={() => setQty(q => q + 1)}>
+            <button type="button" className="qty-btn" disabled={isOutOfStock || qty >= 3} onClick={() => setQty(q => q + 1)}>
               <Plus size={14} />
             </button>
+            {qty >= 3 && <span className="max-qty-hint inline">Max 3 · Contactez-nous pour +</span>}
           </div>
           <div className="product-actions">
             <button className="button-primary" type="button" onClick={handleAddToCart} disabled={isOutOfStock}>
@@ -644,11 +667,7 @@ function ProductView({
           <div className="product-meta">
             <div>
               <span>Availability</span>
-              <strong className={isOutOfStock ? 'stock-out' : ''}>{isOutOfStock ? 'Out of Stock' : `In Stock (${product.stock} available)`}</strong>
-            </div>
-            <div>
-              <span>Shipping</span>
-              <strong>Free Global</strong>
+              <strong className={isOutOfStock ? 'stock-out' : ''}>{isOutOfStock ? 'Out of Stock' : 'In Stock'}</strong>
             </div>
           </div>
         </article>
@@ -670,7 +689,7 @@ function CheckoutView({
   const [orderPlaced, setOrderPlaced] = useState(false)
   const [stockError, setStockError] = useState('')
   const [shipping, setShipping] = useState({
-    name: '', email: user?.email ?? '', phone: '', address: '', city: '', state: '', zip: '',
+    name: '', email: user?.email ?? '', phone: '', address: '', landmark: '', city: '', state: '', zip: '',
   })
 
   useEffect(() => { fetchFee() }, [fetchFee])
@@ -702,10 +721,11 @@ function CheckoutView({
 
       const productMap = new Map(products.map(p => [p.id, p]))
 
+      // Fresh stock check against current DB state
       for (const item of cart.items) {
         const product = productMap.get(item.productId)
         if (!product || product.stock < item.quantity) {
-          setStockError(`Insufficient stock: ${item.title}. Please remove it and try again.`)
+          setStockError(`Stock insuffisant : ${item.title}. Modifiez votre panier et réessayez.`)
           setSubmitting(false)
           return
         }
@@ -715,12 +735,14 @@ function CheckoutView({
         .from('orders')
         .insert({
           user_id: user?.id ?? null,
-          total: fee,
+          total: cart.total + fee,
           shipping_fee: fee,
           shipping_name: shipping.name.trim(),
           shipping_email: shipping.email.trim(),
           shipping_phone: shipping.phone.trim(),
-          shipping_address: shipping.address.trim(),
+          shipping_address: shipping.landmark
+            ? `${shipping.address.trim()} — ${shipping.landmark.trim()}`
+            : shipping.address.trim(),
           shipping_city: shipping.city.trim(),
           shipping_state: shipping.state.trim(),
           shipping_zip: shipping.zip.trim(),
@@ -747,18 +769,40 @@ function CheckoutView({
         throw itemsError
       }
 
+      // Re-check stock just before decrementing to catch race conditions
+      const freshIds = cart.items.map(i => i.productId)
+      const { data: freshProducts, error: freshError } = await supabase
+        .from('products')
+        .select('id, stock')
+        .in('id', freshIds)
+
+      if (freshError) throw freshError
+
+      const freshMap = new Map((freshProducts ?? []).map(p => [p.id, p.stock]))
+
       for (const item of cart.items) {
-        const product = productMap.get(item.productId)!
+        const currentStock = freshMap.get(item.productId)
+        if (currentStock === undefined || currentStock < item.quantity) {
+          await supabase.from('order_items').delete().eq('order_id', order.id)
+          await supabase.from('orders').delete().eq('id', order.id)
+          setStockError(`${item.title} n'est plus disponible en quantité suffisante. Modifiez votre panier.`)
+          setSubmitting(false)
+          return
+        }
+      }
+
+      for (const item of cart.items) {
+        const currentStock = freshMap.get(item.productId)!
         const { error: stockError } = await supabase
           .from('products')
-          .update({ stock: product.stock - item.quantity })
+          .update({ stock: currentStock - item.quantity })
           .eq('id', item.productId)
           .gte('stock', item.quantity)
 
         if (stockError) {
           await supabase.from('order_items').delete().eq('order_id', order.id)
           await supabase.from('orders').delete().eq('id', order.id)
-          setStockError(`Stock changed for ${item.title}. Please try again.`)
+          setStockError(`Stock insuffisant pour ${item.title}. Veuillez réessayer.`)
           return
         }
       }
@@ -767,7 +811,7 @@ function CheckoutView({
       setOrderPlaced(true)
     } catch (err) {
       console.error('Order failed:', err)
-      setStockError('Something went wrong. Please try again.')
+      setStockError('Une erreur est survenue. Veuillez réessayer.')
     } finally {
       setSubmitting(false)
     }
@@ -780,10 +824,10 @@ function CheckoutView({
           <div className="order-success-icon">
             <Package size={48} />
           </div>
-          <h1>Order Placed</h1>
-          <p>Thank you for your purchase. You will receive a confirmation email shortly.</p>
+          <h1>Commande confirmée</h1>
+          <p>Merci pour votre achat. Vous recevrez un email de confirmation sous peu.</p>
           <button className="button-primary" type="button" onClick={() => navigate('/')}>
-            Continue Shopping <ArrowRight size={16} />
+            Continuer mes achats <ArrowRight size={16} />
           </button>
         </div>
       </section>
@@ -795,10 +839,10 @@ function CheckoutView({
       <section className="page-checkout">
         <div className="order-success">
           <ShoppingBag size={48} strokeWidth={1.5} />
-          <h1>Your Bag is Empty</h1>
-          <p>Browse our collection and find your perfect sign.</p>
+          <h1>Votre panier est vide</h1>
+          <p>Parcourez notre collection et trouvez votre enseigne idéale.</p>
           <button className="button-primary" type="button" onClick={() => navigate('/')}>
-            Shop Now <ArrowRight size={16} />
+            Voir la boutique <ArrowRight size={16} />
           </button>
         </div>
       </section>
@@ -810,81 +854,88 @@ function CheckoutView({
       <div className="checkout-header">
         <div>
           <h1>Checkout</h1>
-          <p>Complete your secure purchase.</p>
+          <p>Finalisez votre commande en toute sécurité.</p>
         </div>
       </div>
 
       <div className="checkout-layout">
         <div className="checkout-form-grid">
-          <CheckoutBlock title="Contact" step="Step 1 of 3">
-            <input
-              className="field-input"
-              placeholder="Email Address"
-              value={shipping.email}
-              onChange={e => setShipping(s => ({ ...s, email: e.target.value }))}
-            />
+          <CheckoutBlock title="Contact" step="Étape 1 / 3">
             <input
               className="field-input"
               type="tel"
-              placeholder="Phone Number *"
+              placeholder="Téléphone *"
               value={shipping.phone}
               onChange={e => setShipping(s => ({ ...s, phone: e.target.value }))}
               required
             />
+            <input
+              className="field-input"
+              placeholder="Email"
+              value={shipping.email}
+              onChange={e => setShipping(s => ({ ...s, email: e.target.value }))}
+            />
             {!user && (
-              <p className="payment-note">Already have an account? <Link to="/auth" className="text-link">Sign in</Link></p>
+              <p className="payment-note">Vous avez déjà un compte ? <Link to="/auth" className="text-link">Connectez-vous</Link></p>
             )}
           </CheckoutBlock>
 
-          <CheckoutBlock title="Shipping" step="Step 2 of 3">
+          <CheckoutBlock title="Livraison" step="Étape 2 / 3">
             <input
               className="field-input"
-              placeholder="Full Name"
+              placeholder="Nom complet *"
               value={shipping.name}
               onChange={e => setShipping(s => ({ ...s, name: e.target.value }))}
             />
             <input
               className="field-input"
-              placeholder="Address"
+              placeholder="Adresse *"
               value={shipping.address}
               onChange={e => setShipping(s => ({ ...s, address: e.target.value }))}
+            />
+            <input
+              className="field-input"
+              placeholder="Point de repère (facultatif)"
+              value={shipping.landmark}
+              onChange={e => setShipping(s => ({ ...s, landmark: e.target.value }))}
             />
             <div className="field-row three-up">
               <input
                 className="field-input"
-                placeholder="City"
+                placeholder="Ville *"
                 value={shipping.city}
                 onChange={e => setShipping(s => ({ ...s, city: e.target.value }))}
               />
               <input
                 className="field-input"
-                placeholder="State"
+                placeholder="Gouvernorat *"
                 value={shipping.state}
                 onChange={e => setShipping(s => ({ ...s, state: e.target.value }))}
               />
               <input
                 className="field-input"
-                placeholder="ZIP Code"
+                placeholder="Code postal *"
                 value={shipping.zip}
                 onChange={e => setShipping(s => ({ ...s, zip: e.target.value }))}
               />
             </div>
           </CheckoutBlock>
 
-          <CheckoutBlock title="Payment" step="Step 3 of 3">
-            <p className="payment-note">Pay on delivery — cash only.</p>
+          <CheckoutBlock title="Paiement" step="Étape 3 / 3">
+            <p className="payment-note">Paiement à la livraison — espèces acceptées.</p>
             <div className="payment-method">
               <label>
                 <input type="radio" name="payment" defaultChecked />
-                <span>Cash on Delivery</span>
+                <span>Paiement à la livraison</span>
               </label>
               <Lock size={18} />
             </div>
+            <p className="payment-note delivery-note">Livraison sous 2–5 jours ouvrés dans toute la Tunisie.</p>
           </CheckoutBlock>
         </div>
 
         <aside className="summary-panel">
-          <h2>Summary</h2>
+          <h2>Récapitulatif</h2>
           {cart.items.map(item => (
             <div key={item.productId} className="summary-item">
               <div className="summary-thumb">
@@ -896,14 +947,43 @@ function CheckoutView({
               </div>
               <div className="summary-copy">
                 <h3>{item.title}</h3>
-                <p>Qty: {item.quantity}</p>
+                <div className="summary-qty-row">
+                  <button
+                    type="button"
+                    className="qty-btn qty-btn-xs"
+                    onClick={() => cart.updateQuantity(item.productId, item.quantity - 1)}
+                  >
+                    <Minus size={10} />
+                  </button>
+                  <span className="qty-value-sm">{item.quantity}</span>
+                  <button
+                    type="button"
+                    className="qty-btn qty-btn-xs"
+                    disabled={item.quantity >= 3}
+                    onClick={() => cart.updateQuantity(item.productId, item.quantity + 1)}
+                    title={item.quantity >= 3 ? 'Contactez-nous pour les grandes quantités' : undefined}
+                  >
+                    <Plus size={10} />
+                  </button>
+                  {item.quantity >= 3 && <span className="max-qty-hint">Max 3</span>}
+                </div>
               </div>
-              <strong>{(item.price * item.quantity).toLocaleString()} DT</strong>
+              <div className="summary-right">
+                <strong>{(item.price * item.quantity).toLocaleString()} DT</strong>
+                <button
+                  type="button"
+                  className="summary-remove"
+                  onClick={() => cart.removeItem(item.productId)}
+                  title="Remove"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
             </div>
           ))}
           <div className="summary-lines">
-            <div><span>Subtotal</span><strong>{cart.total.toLocaleString()} DT</strong></div>
-            <div><span>Shipping</span><strong>{fee > 0 ? `${fee.toLocaleString()} DT` : 'Free'}</strong></div>
+            <div><span>Sous-total</span><strong>{cart.total.toLocaleString()} DT</strong></div>
+            <div><span>Livraison</span><strong>{fee > 0 ? `${fee.toLocaleString()} DT` : 'Gratuite'}</strong></div>
           </div>
           <div className="summary-total">
             <span>Total</span>
@@ -916,7 +996,7 @@ function CheckoutView({
             onClick={handlePlaceOrder}
             disabled={submitting || !isFormValid}
           >
-            {submitting ? 'Placing Order...' : 'Complete Order'} <ArrowRight size={16} />
+            {submitting ? 'Commande en cours...' : 'Confirmer la commande'} <ArrowRight size={16} />
           </button>
         </aside>
       </div>
@@ -1018,11 +1098,13 @@ function AuthView({
 function AdminView({
   products,
   labels,
+  productLabels,
   refetchProducts,
   refetchLabels,
 }: {
   products: Product[]
   labels: Array<{ id: string; name: string; slug: string }>
+  productLabels: Record<string, string[]>
   refetchProducts: () => Promise<void>
   refetchLabels: () => Promise<void>
 }) {
@@ -1030,13 +1112,15 @@ function AdminView({
   const navigate = useNavigate()
   const admin = useAdmin()
   const shippingFee = useShippingFee()
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'add' | 'labels' | 'shipping'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'add' | 'labels' | 'shipping' | 'orders'>('dashboard')
+  const [editingProductId, setEditingProductId] = useState<string | null>(null)
 
   const tabFromUrl = useCallback(() => {
     if (location.pathname === '/admin/products') return 'products' as const
     if (location.pathname === '/admin/add') return 'add' as const
     if (location.pathname === '/admin/labels') return 'labels' as const
     if (location.pathname === '/admin/shipping') return 'shipping' as const
+    if (location.pathname === '/admin/orders') return 'orders' as const
     return 'dashboard' as const
   }, [location.pathname])
 
@@ -1049,12 +1133,13 @@ function AdminView({
     shippingFee.fetchFee()
   }, [admin.fetchStats, shippingFee.fetchFee])
 
-  const handleTabChange = (tab: 'dashboard' | 'products' | 'add' | 'labels' | 'shipping') => {
+  const handleTabChange = (tab: 'dashboard' | 'products' | 'add' | 'labels' | 'shipping' | 'orders') => {
     setActiveTab(tab)
     if (tab === 'dashboard') navigate('/admin')
     else if (tab === 'products') navigate('/admin/products')
     else if (tab === 'labels') navigate('/admin/labels')
     else if (tab === 'shipping') navigate('/admin/shipping')
+    else if (tab === 'orders') navigate('/admin/orders')
     else navigate('/admin/add')
   }
 
@@ -1103,6 +1188,13 @@ function AdminView({
         >
           <Truck size={14} /> Shipping
         </button>
+        <button
+          type="button"
+          className={`admin-tab ${activeTab === 'orders' ? 'is-active' : ''}`}
+          onClick={() => handleTabChange('orders')}
+        >
+          <ClipboardList size={14} /> Orders
+        </button>
       </div>
 
       {admin.error && <div className="admin-error">{admin.error}</div>}
@@ -1117,12 +1209,30 @@ function AdminView({
         </div>
       )}
 
-      {activeTab === 'products' && (
+      {activeTab === 'products' && !editingProductId && (
         <AdminProducts
           products={products}
           onDelete={admin.deleteProduct}
           onRefresh={async () => { await admin.fetchStats(); await refetchProducts() }}
           onAddStock={admin.addStock}
+          onEdit={id => setEditingProductId(id)}
+        />
+      )}
+
+      {activeTab === 'products' && editingProductId && (
+        <AdminEditProduct
+          product={products.find(p => p.id === editingProductId) ?? null}
+          labels={labels}
+          productLabelIds={productLabels[editingProductId] ?? []}
+          onUpdate={async (form, newFiles, removeIds) => {
+            const ok = await admin.updateProduct(editingProductId, form)
+            if (ok && (newFiles.length > 0 || removeIds.length > 0)) {
+              await admin.updateProductImages(editingProductId, newFiles, removeIds)
+            }
+            if (ok) { setEditingProductId(null); refetchProducts() }
+            return ok
+          }}
+          onCancel={() => setEditingProductId(null)}
         />
       )}
 
@@ -1152,66 +1262,68 @@ function AdminView({
           onRefresh={shippingFee.fetchFee}
         />
       )}
+
+      {activeTab === 'orders' && (
+        <AdminOrders
+          admin={admin}
+          onMarkShipped={async (id) => {
+            const ok = await admin.markAsShipped(id)
+            if (ok) admin.fetchStats()
+            return ok
+          }}
+        />
+      )}
     </section>
   )
 }
 
 function AdminDashboard({ stats }: { stats: import('./lib/useAdmin').AdminStats }) {
+  const shippedRev = stats.totalRevenue
+
   return (
     <>
       <div className="admin-stats-grid">
         <div className="stat-card">
-          <div className="stat-icon"><Package size={20} /></div>
-          <div className="stat-content">
-            <span className="stat-label">Products</span>
-            <strong className="stat-value">{stats.totalProducts}</strong>
-          </div>
-        </div>
-        <div className="stat-card">
           <div className="stat-icon"><DollarSign size={20} /></div>
           <div className="stat-content">
-            <span className="stat-label">Revenue</span>
-            <strong className="stat-value">{stats.totalRevenue.toLocaleString()} DT</strong>
+            <span className="stat-label">Shipped Revenue</span>
+            <strong className="stat-value">{shippedRev.toLocaleString()} DT</strong>
+            <span className="stat-sublabel">{stats.shippedOrders} orders shipped</span>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon"><BarChart3 size={20} /></div>
           <div className="stat-content">
-            <span className="stat-label">Orders</span>
+            <span className="stat-label">Total Orders</span>
             <strong className="stat-value">{stats.totalOrders}</strong>
+            <span className="stat-sublabel">{stats.pendingOrders} pending</span>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon"><Users size={20} /></div>
           <div className="stat-content">
-            <span className="stat-label">Users</span>
+            <span className="stat-label">Avg. Order Value</span>
+            <strong className="stat-value">{stats.averageOrderValue.toLocaleString()} DT</strong>
+            <span className="stat-sublabel">per shipped order</span>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon"><Users size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-label">Customers</span>
             <strong className="stat-value">{stats.totalUsers}</strong>
+            <span className="stat-sublabel">registered users</span>
           </div>
         </div>
       </div>
 
-      <div className="admin-panels">
+      <div className="admin-panels" style={{ marginTop: 24 }}>
         <div className="admin-panel">
-          <h3>Recent Orders</h3>
-          {stats.recentOrders.length === 0 && <p className="admin-empty">No orders yet.</p>}
-          {stats.recentOrders.map(order => (
-            <div key={order.id} className="admin-list-row">
-              <div className="admin-list-main">
-                <strong>{order.shipping_name || 'Guest'}</strong>
-                <span>{order.shipping_email}</span>
-              </div>
-              <div className="admin-list-meta">
-                <span className={`order-status status-${order.status}`}>{order.status}</span>
-                <strong>{order.total.toLocaleString()} DT</strong>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="admin-panel">
-          <h3>Top Products</h3>
-          {stats.topProducts.map(product => (
+          <h3>Best Sellers</h3>
+          {stats.bestSellingProducts.length === 0 && <p className="admin-empty">No sales yet.</p>}
+          {stats.bestSellingProducts.map((product, i) => (
             <div key={product.id} className="admin-list-row">
+              <span className="rank-badge">{i + 1}</span>
               <div className="admin-list-thumb">
                 {product.image_url ? (
                   <img src={product.image_url} alt={product.title} />
@@ -1223,11 +1335,77 @@ function AdminDashboard({ stats }: { stats: import('./lib/useAdmin').AdminStats 
               </div>
               <div className="admin-list-main">
                 <strong>{product.title}</strong>
-                <span>{product.price.toLocaleString()} DT · {product.stock} in stock</span>
+                <span>{product.totalSold} sold · {product.revenue.toLocaleString()} DT revenue</span>
+              </div>
+              <div className="admin-list-meta">
+                <strong>{product.stock} left</strong>
               </div>
             </div>
           ))}
         </div>
+
+        <div className="admin-panel">
+          <h3>Monthly Revenue <span className="panel-subtitle">(shipped, excl. shipping)</span></h3>
+          {stats.monthlyRevenue.length === 0 && <p className="admin-empty">No shipped orders yet.</p>}
+          <div className="monthly-revenue-chart">
+            {stats.monthlyRevenue.map(({ month, revenue }) => {
+              const max = Math.max(...stats.monthlyRevenue.map(m => m.revenue), 1)
+              const pct = (revenue / max) * 100
+              return (
+                <div key={month} className="revenue-bar-group">
+                  <span className="revenue-bar-label">{month.slice(5)}</span>
+                  <div className="revenue-bar-track">
+                    <div className="revenue-bar-fill" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="revenue-bar-value">{revenue.toLocaleString()} DT</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="admin-panels" style={{ marginTop: 24 }}>
+        <div className="admin-panel">
+          <h3>Order Status</h3>
+          {Object.keys(stats.orderStatusCounts).length === 0 && <p className="admin-empty">No orders yet.</p>}
+          {Object.entries(stats.orderStatusCounts).map(([status, count]) => (
+            <div key={status} className="admin-list-row">
+              <div className="admin-list-main">
+                <span className={`order-status status-${status}`}>{status}</span>
+              </div>
+              <div className="admin-list-meta">
+                <strong>{count}</strong>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {stats.lowStockProducts.length > 0 && (
+          <div className="admin-panel">
+            <h3>Low Stock Alert</h3>
+            {stats.lowStockProducts.map(product => (
+              <div key={product.id} className="admin-list-row">
+                <div className="admin-list-thumb">
+                  {product.image_url ? (
+                    <img src={product.image_url} alt={product.title} />
+                  ) : (
+                    <div className={`admin-thumb-placeholder sign-glow-${product.glow}`}>
+                      <span className="sign-text">{product.title}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="admin-list-main">
+                  <strong>{product.title}</strong>
+                  <span>{product.price.toLocaleString()} DT</span>
+                </div>
+                <div className="admin-list-meta">
+                  <span className="low-stock-badge">{product.stock} left</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </>
   )
@@ -1238,11 +1416,13 @@ function AdminProducts({
   onDelete,
   onRefresh,
   onAddStock,
+  onEdit,
 }: {
   products: Product[]
   onDelete: (id: string) => Promise<boolean>
   onRefresh: () => Promise<void>
   onAddStock?: (id: string, amount: number) => Promise<boolean>
+  onEdit: (id: string) => void
 }) {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [addingStock, setAddingStock] = useState<string | null>(null)
@@ -1294,6 +1474,14 @@ function AdminProducts({
             <Link to={`/product/${product.id}`} className="icon-button small" title="View">
               <Eye size={14} />
             </Link>
+            <button
+              type="button"
+              className="icon-button small"
+              title="Edit"
+              onClick={() => onEdit(product.id)}
+            >
+              <PenSquare size={14} />
+            </button>
             {onAddStock && (
               <button
                 type="button"
@@ -1321,13 +1509,112 @@ function AdminProducts({
   )
 }
 
+function AdminOrders({
+  admin,
+  onMarkShipped,
+}: {
+  admin: ReturnType<typeof useAdmin>
+  onMarkShipped: (id: string) => Promise<boolean>
+}) {
+  const [orders, setOrders] = useState<import('./lib/useAdmin').FullOrder[]>([])
+  const [loading, setLoading] = useState(true)
+  const [shippingId, setShippingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    admin.fetchOrders().then(data => { setOrders(data); setLoading(false) })
+  }, [admin.fetchOrders])
+
+  if (loading) {
+    return <div className="signs-loading"><div className="loading-spinner" /><p>Loading orders...</p></div>
+  }
+
+  if (orders.length === 0) {
+    return <div className="admin-empty" style={{ marginTop: 24 }}>No orders yet.</div>
+  }
+
+  return (
+    <div className="admin-orders-page">
+      {orders.map(order => {
+        const itemTotal = order.items.reduce((s, i) => s + i.unit_price * i.quantity, 0)
+        return (
+          <div key={order.id} className="order-card order-card-full">
+            <div className="order-card-header">
+              <span className={`order-status status-${order.status}`}>{order.status}</span>
+              <strong>{itemTotal.toLocaleString()} DT</strong>
+              {order.shipping_fee > 0 && <span className="shipping-note">+ {order.shipping_fee.toLocaleString()} DT shipping</span>}
+              <span className="order-card-date">{new Date(order.created_at).toLocaleDateString()}</span>
+              {order.status !== 'shipped' && (
+                <button
+                  type="button"
+                  className="button-primary button-sm"
+                  disabled={shippingId === order.id}
+                  onClick={async () => {
+                    setShippingId(order.id)
+                    const ok = await onMarkShipped(order.id)
+                    if (ok) setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'shipped' } : o))
+                    setShippingId(null)
+                  }}
+                >
+                  <CheckCircle size={14} /> Mark Shipped
+                </button>
+              )}
+            </div>
+            <div className="order-card-body">
+              <div className="order-card-field">
+                <span className="field-label-sm">Name</span>
+                <span>{order.shipping_name || '—'}</span>
+              </div>
+              <div className="order-card-field">
+                <span className="field-label-sm">Email</span>
+                <span>{order.shipping_email || '—'}</span>
+              </div>
+              <div className="order-card-field">
+                <span className="field-label-sm">Phone</span>
+                <span>{order.shipping_phone || '—'}</span>
+              </div>
+              <div className="order-card-field">
+                <span className="field-label-sm">Address</span>
+                <span>{order.shipping_address || '—'}</span>
+              </div>
+              <div className="order-card-field">
+                <span className="field-label-sm">City</span>
+                <span>{order.shipping_city || '—'}</span>
+              </div>
+              <div className="order-card-field">
+                <span className="field-label-sm">Governorate</span>
+                <span>{order.shipping_state || '—'}</span>
+              </div>
+              <div className="order-card-field">
+                <span className="field-label-sm">ZIP</span>
+                <span>{order.shipping_zip || '—'}</span>
+              </div>
+            </div>
+            {order.items.length > 0 && (
+              <div className="order-items-list">
+                <span className="field-label-sm">Items</span>
+                {order.items.map(item => (
+                  <div key={item.id} className="order-item-row">
+                    <span>Product #{item.product_id.slice(0, 8)}</span>
+                    <span>×{item.quantity}</span>
+                    <span>{(item.unit_price * item.quantity).toLocaleString()} DT</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function AdminAddProduct({
   labels,
   onCreate,
   onSuccess,
 }: {
   labels: Array<{ id: string; name: string; slug: string }>
-  onCreate: (form: ProductForm, imageFile: File | null) => Promise<boolean>
+  onCreate: (form: ProductForm, imageFiles: File[]) => Promise<boolean>
   onSuccess: () => void
 }) {
   const navigate = useNavigate()
@@ -1343,12 +1630,11 @@ function AdminAddProduct({
     is_trending: false,
     image_url: '',
   })
-  const [imageFile, setImageFile] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [imageFiles, setImageFiles] = useState<File[]>([])
+  const [imagePreviews, setImagePreviews] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const dragAreaRef = useRef<HTMLDivElement>(null)
 
   const updateField = (field: keyof ProductForm, value: string | boolean) => {
     setForm(f => ({ ...f, [field]: value }))
@@ -1363,34 +1649,25 @@ function AdminAddProduct({
     }))
   }
 
-  const handleFileSelect = (file: File) => {
-    if (!file.type.startsWith('image/')) return
-    setImageFile(file)
-    const url = URL.createObjectURL(file)
-    setImagePreview(url)
+  const addFiles = (files: FileList | File[]) => {
+    const valid = Array.from(files).filter(f => f.type.startsWith('image/'))
+    setImageFiles(prev => [...prev, ...valid])
+    setImagePreviews(prev => [...prev, ...valid.map(f => URL.createObjectURL(f))])
   }
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    dragAreaRef.current?.classList.remove('is-dragover')
-    const file = e.dataTransfer.files[0]
-    if (file) handleFileSelect(file)
-  }
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    dragAreaRef.current?.classList.add('is-dragover')
-  }
-
-  const handleDragLeave = () => {
-    dragAreaRef.current?.classList.remove('is-dragover')
+  const removeFile = (index: number) => {
+    setImageFiles(prev => prev.filter((_, i) => i !== index))
+    setImagePreviews(prev => {
+      URL.revokeObjectURL(prev[index])
+      return prev.filter((_, i) => i !== index)
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.title || !form.price) return
     setSubmitting(true)
-    const ok = await onCreate(form, imageFile)
+    const ok = await onCreate(form, imageFiles)
     setSubmitting(false)
     if (ok) {
       setSuccess(true)
@@ -1525,48 +1802,40 @@ function AdminAddProduct({
         </div>
 
         <div className="admin-form-image">
-          <h3>Product Image</h3>
-          <div
-            ref={dragAreaRef}
-            className={`image-drop-zone ${imagePreview ? 'has-image' : ''}`}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {imagePreview ? (
-              <>
-                <img src={imagePreview} alt="Preview" className="image-preview" />
+          <h3>Product Images</h3>
+          <div className="edit-image-list">
+            {imagePreviews.map((url, i) => (
+              <div key={url} className="edit-image-item">
+                <img src={url} alt={`Preview ${i + 1}`} className="edit-image-preview" />
                 <button
                   type="button"
                   className="image-remove"
-                  onClick={e => {
-                    e.stopPropagation()
-                    setImageFile(null)
-                    setImagePreview(null)
-                  }}
+                  onClick={() => removeFile(i)}
                 >
                   <X size={16} />
                 </button>
-              </>
-            ) : (
-              <>
-                <Upload size={32} strokeWidth={1.5} />
-                <p>Drop image here or click to upload</p>
-                <span>PNG, JPG, WEBP up to 5MB</span>
-              </>
-            )}
+              </div>
+            ))}
+            <button
+              type="button"
+              className="edit-image-add"
+              onClick={() => fileInputRef.current?.click()}
+              title="Add image"
+            >
+              <Upload size={22} strokeWidth={1.5} />
+            </button>
           </div>
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
+            multiple
             className="sr-only"
             onChange={e => {
-              const file = e.target.files?.[0]
-              if (file) handleFileSelect(file)
+              if (e.target.files) addFiles(e.target.files)
             }}
           />
+          <p className="image-hint">First image is the primary. Drag to reorder. PNG, JPG, WEBP up to 5MB each.</p>
         </div>
       </div>
 
@@ -1584,6 +1853,298 @@ function AdminAddProduct({
           disabled={submitting || !form.title || !form.price}
         >
           {submitting ? 'Creating...' : 'Create Product'} <Upload size={16} />
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function AdminEditProduct({
+  product,
+  labels,
+  productLabelIds,
+  onUpdate,
+  onCancel,
+}: {
+  product: Product | null
+  labels: Array<{ id: string; name: string; slug: string }>
+  productLabelIds: string[]
+  onUpdate: (form: ProductForm, newFiles: File[], removeIds: string[]) => Promise<boolean>
+  onCancel: () => void
+}) {
+  const [form, setForm] = useState<ProductForm>({
+    title: product?.title ?? '',
+    subtitle: product?.subtitle ?? '',
+    description: product?.description ?? '',
+    price: product?.price.toString() ?? '',
+    glow: product?.glow ?? 'white',
+    size: product?.size ?? 'md',
+    label_ids: productLabelIds,
+    stock: product?.stock.toString() ?? '10',
+    is_trending: product?.is_trending ?? false,
+    image_url: product?.image_url ?? '',
+  })
+  const [existingImages, setExistingImages] = useState<Array<{ id: string; url: string }>>([])
+  const [newFiles, setNewFiles] = useState<File[]>([])
+  const [newPreviews, setNewPreviews] = useState<string[]>([])
+  const [removeIds, setRemoveIds] = useState<string[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const [success, setSuccess] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!product) return
+    supabase.from('product_images').select('id, url').eq('product_id', product.id).order('sort_order').then(({ data }) => {
+      setExistingImages(data ?? [])
+    })
+  }, [product])
+
+  const updateField = (field: keyof ProductForm, value: string | boolean) => {
+    setForm(f => ({ ...f, [field]: value }))
+  }
+
+  const toggleLabel = (labelId: string) => {
+    setForm(f => ({
+      ...f,
+      label_ids: f.label_ids.includes(labelId)
+        ? f.label_ids.filter(id => id !== labelId)
+        : [...f.label_ids, labelId],
+    }))
+  }
+
+  const addFiles = (files: FileList | File[]) => {
+    const valid = Array.from(files).filter(f => f.type.startsWith('image/'))
+    setNewFiles(prev => [...prev, ...valid])
+    setNewPreviews(prev => [...prev, ...valid.map(f => URL.createObjectURL(f))])
+  }
+
+  const removeExisting = (id: string) => {
+    setRemoveIds(prev => [...prev, id])
+    setExistingImages(prev => prev.filter(img => img.id !== id))
+  }
+
+  const removeNew = (index: number) => {
+    setNewFiles(prev => prev.filter((_, i) => i !== index))
+    setNewPreviews(prev => {
+      URL.revokeObjectURL(prev[index])
+      return prev.filter((_, i) => i !== index)
+    })
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!form.title || !form.price) return
+    setSubmitting(true)
+    const ok = await onUpdate(form, newFiles, removeIds)
+    setSubmitting(false)
+    if (ok) {
+      setSuccess(true)
+      setTimeout(onCancel, 1500)
+    }
+  }
+
+  if (!product) {
+    return <div className="signs-loading"><p>Product not found.</p></div>
+  }
+
+  if (success) {
+    return (
+      <div className="order-success">
+        <div className="order-success-icon">
+          <Upload size={48} />
+        </div>
+        <h1>Product Updated</h1>
+        <p>Your changes have been saved.</p>
+      </div>
+    )
+  }
+
+  return (
+    <form className="admin-add-form" onSubmit={handleSubmit}>
+      <div className="admin-form-grid">
+        <div className="admin-form-fields">
+          <div>
+            <label className="field-label">Title</label>
+            <input
+              className="field-input"
+              type="text"
+              placeholder="Product Title"
+              value={form.title}
+              onChange={e => updateField('title', e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <label className="field-label">Subtitle</label>
+            <input
+              className="field-input"
+              type="text"
+              placeholder="Tagline (optional)"
+              value={form.subtitle}
+              onChange={e => updateField('subtitle', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="field-label">Description</label>
+            <textarea
+              className="field-input field-textarea"
+              placeholder="Description (optional)"
+              value={form.description}
+              onChange={e => updateField('description', e.target.value)}
+            />
+          </div>
+          <div className="form-row">
+            <div>
+              <label className="field-label">Price (DT)</label>
+              <input
+                className="field-input"
+                type="number"
+                placeholder="0"
+                min="0"
+                step="0.001"
+                value={form.price}
+                onChange={e => updateField('price', e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className="field-label">Stock</label>
+              <input
+                className="field-input"
+                type="number"
+                placeholder="10"
+                min="0"
+                value={form.stock}
+                onChange={e => updateField('stock', e.target.value)}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="field-label">Labels</label>
+            <div className="chip-group">
+              {labels.map(label => (
+                <button
+                  key={label.id}
+                  type="button"
+                  className={`chip-button ${form.label_ids.includes(label.id) ? 'is-active' : ''}`}
+                  onClick={() => toggleLabel(label.id)}
+                >
+                  {label.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="form-row">
+            <div>
+              <label className="field-label">Glow Color</label>
+              <div className="chip-group">
+                {GLOW_OPTIONS.map(g => (
+                  <button
+                    key={g}
+                    type="button"
+                    className={`chip-button ${form.glow === g ? 'is-active' : ''}`}
+                    onClick={() => updateField('glow', g)}
+                  >
+                    <span className={`glow-dot sign-glow-${g}`} />
+                    {g}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="field-label">Size</label>
+              <div className="chip-group">
+                {SIZE_OPTIONS.map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`chip-button ${form.size === s ? 'is-active' : ''}`}
+                    onClick={() => updateField('size', s)}
+                  >
+                    {s.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={form.is_trending}
+              onChange={e => updateField('is_trending', e.target.checked)}
+            />
+            Mark as trending
+          </label>
+        </div>
+
+        <div className="admin-form-image">
+          <h3>Product Images</h3>
+          <div className="edit-image-list">
+            {existingImages.map(img => (
+              <div key={img.id} className="edit-image-item">
+                <img src={img.url} alt="" className="edit-image-preview" />
+                <button
+                  type="button"
+                  className="image-remove"
+                  onClick={() => removeExisting(img.id)}
+                  title="Remove"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
+            {newPreviews.map((url, i) => (
+              <div key={url} className="edit-image-item">
+                <img src={url} alt={`New ${i + 1}`} className="edit-image-preview" />
+                <button
+                  type="button"
+                  className="image-remove"
+                  onClick={() => removeNew(i)}
+                  title="Remove"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="edit-image-add"
+              onClick={() => fileInputRef.current?.click()}
+              title="Add image"
+            >
+              <Upload size={22} strokeWidth={1.5} />
+            </button>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="sr-only"
+            onChange={e => {
+              if (e.target.files) addFiles(e.target.files)
+              e.target.value = ''
+            }}
+          />
+          <p className="image-hint">First image is the primary. PNG, JPG, WEBP up to 5MB each.</p>
+        </div>
+      </div>
+
+      <div className="admin-form-actions">
+        <button
+          type="button"
+          className="button-secondary"
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="button-primary"
+          disabled={submitting || !form.title || !form.price}
+        >
+          {submitting ? 'Saving...' : 'Save Changes'} <Upload size={16} />
         </button>
       </div>
     </form>

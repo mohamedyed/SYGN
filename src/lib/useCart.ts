@@ -37,6 +37,7 @@ export function useCart() {
     setItems(prev => {
       const existing = prev.find(i => i.productId === item.productId)
       if (existing) {
+        if (existing.quantity >= 3) return prev
         return prev.map(i => i.productId === item.productId ? { ...i, quantity: i.quantity + 1 } : i)
       }
       return [...prev, { ...item, quantity: 1 }]

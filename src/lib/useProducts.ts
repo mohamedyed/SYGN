@@ -10,6 +10,7 @@ export interface Product {
   glow: string
   size: string
   image_url: string | null
+  images: string[]
   stock: number
   is_trending: boolean
   created_at: string
@@ -30,15 +31,24 @@ export function useProducts() {
 
   const fetchProducts = useCallback(async () => {
     setLoading(true)
-    const { data, error: err } = await supabase
-      .from('products')
-      .select('*')
-      .order('created_at', { ascending: false })
+    const [productsRes, imagesRes] = await Promise.all([
+      supabase.from('products').select('*').order('created_at', { ascending: false }),
+      supabase.from('product_images').select('product_id, url, sort_order').order('sort_order'),
+    ])
 
-    if (err) {
-      setError(err.message)
+    if (productsRes.error) {
+      setError(productsRes.error.message)
     } else {
-      setProducts(data ?? [])
+      const imgMap: Record<string, string[]> = {}
+      for (const row of imagesRes.data ?? []) {
+        if (!imgMap[row.product_id]) imgMap[row.product_id] = []
+        imgMap[row.product_id].push(row.url)
+      }
+
+      setProducts((productsRes.data ?? []).map(p => ({
+        ...p,
+        images: imgMap[p.id] ?? [],
+      })))
     }
     setLoading(false)
   }, [])

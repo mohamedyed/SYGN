@@ -45,8 +45,11 @@ DO $$ BEGIN
   DROP POLICY IF EXISTS "Admins can insert product_labels" ON product_labels;
   DROP POLICY IF EXISTS "Admins can delete product_labels" ON product_labels;
   DROP POLICY IF EXISTS "Admins can view all orders" ON orders;
+  DROP POLICY IF EXISTS "Admins can update orders" ON orders;
   DROP POLICY IF EXISTS "Admins can view all order items" ON order_items;
   DROP POLICY IF EXISTS "Admins can view all profiles" ON profiles;
+  DROP POLICY IF EXISTS "Admins can insert product_images" ON product_images;
+  DROP POLICY IF EXISTS "Admins can delete product_images" ON product_images;
 EXCEPTION WHEN undefined_object THEN null;
 END $$;
 
@@ -97,9 +100,20 @@ CREATE POLICY "Admins can delete product_labels" ON product_labels
 CREATE POLICY "Admins can view all orders" ON orders
   FOR SELECT USING (public.is_admin());
 
+-- 9b. Admin can update orders (mark as shipped, etc.)
+CREATE POLICY "Admins can update orders" ON orders
+  FOR UPDATE USING (public.is_admin());
+
 CREATE POLICY "Admins can view all order items" ON order_items
   FOR SELECT USING (public.is_admin());
 
 -- 10. Admin can view all profiles
 CREATE POLICY "Admins can view all profiles" ON profiles
   FOR SELECT USING (public.is_admin());
+
+-- 11. Admin can manage product images
+CREATE POLICY "Admins can insert product_images" ON product_images
+  FOR INSERT WITH CHECK (public.is_admin());
+
+CREATE POLICY "Admins can delete product_images" ON product_images
+  FOR DELETE USING (public.is_admin());

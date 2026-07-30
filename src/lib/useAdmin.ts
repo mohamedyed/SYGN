@@ -2,19 +2,23 @@ import { useState, useCallback } from 'react'
 import { supabase } from './supabase'
 
 export interface AdminStats {
-  totalProducts: number
-  totalOrders: number
   totalRevenue: number
+  totalOrders: number
   totalUsers: number
-  recentOrders: Array<{
+  pendingOrders: number
+  shippedOrders: number
+  averageOrderValue: number
+  bestSellingProducts: Array<{
     id: string
-    total: number
-    status: string
-    shipping_name: string | null
-    shipping_email: string | null
-    created_at: string
+    title: string
+    price: number
+    stock: number
+    image_url: string | null
+    glow: string
+    totalSold: number
+    revenue: number
   }>
-  topProducts: Array<{
+  lowStockProducts: Array<{
     id: string
     title: string
     price: number
@@ -22,6 +26,33 @@ export interface AdminStats {
     image_url: string | null
     glow: string
   }>
+  orderStatusCounts: Record<string, number>
+  monthlyRevenue: Array<{ month: string; revenue: number }>
+}
+
+export interface OrderItem {
+  id: string
+  product_id: string
+  quantity: number
+  unit_price: number
+  created_at: string
+}
+
+export interface FullOrder {
+  id: string
+  user_id: string | null
+  status: string
+  total: number
+  shipping_fee: number
+  shipping_name: string | null
+  shipping_email: string | null
+  shipping_phone: string | null
+  shipping_address: string | null
+  shipping_city: string | null
+  shipping_state: string | null
+  shipping_zip: string | null
+  created_at: string
+  items: OrderItem[]
 }
 
 export interface ProductForm {
@@ -49,26 +80,80 @@ export function useAdmin() {
     setLoading(true)
     setError(null)
     try {
-      const [productsRes, ordersRes, profilesRes, orderItemsRes] = await Promise.all([
+      const [productsRes, orderItemsRes, allOrdersRes, profilesRes] = await Promise.all([
         supabase.from('products').select('id, title, price, stock, image_url, glow'),
-        supabase.from('orders').select('id, total, status, shipping_name, shipping_email, created_at').order('created_at', { ascending: false }).limit(10),
+        supabase.from('order_items').select('order_id, product_id, unit_price, quantity'),
+        supabase.from('orders').select('id, shipping_fee, status, created_at'),
         supabase.from('profiles').select('id', { count: 'exact', head: true }),
-        supabase.from('order_items').select('unit_price, quantity'),
       ])
 
       const products = productsRes.data ?? []
-      const orders = ordersRes.data ?? []
-      const orderItems = orderItemsRes.data ?? []
+      const allOrders = allOrdersRes.data ?? []
+      const allOrderItems = orderItemsRes.data ?? []
 
-      const totalRevenue = orderItems.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0)
+      // Revenue: only shipped orders, exclude shipping_fee
+      const shippedOrders = allOrders.filter(o => o.status === 'shipped')
+      const shippedOrderIds = new Set(shippedOrders.map(o => o.id))
+      const shippedItems = allOrderItems.filter(item => shippedOrderIds.has(item.order_id))
+      const totalRevenue = shippedItems.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0)
+
+      const totalOrders = allOrders.length
+      const shippedCount = shippedOrders.length
+      const pendingCount = allOrders.filter(o => o.status !== 'shipped').length
+      const avgOrderValue = shippedCount > 0 ? Math.round(totalRevenue / shippedCount) : 0
+
+      // Best-selling products: aggregate sold qty and revenue from ALL order_items (not just shipped)
+      const productSales: Record<string, { totalSold: number; revenue: number }> = {}
+      for (const item of allOrderItems) {
+        if (!productSales[item.product_id]) productSales[item.product_id] = { totalSold: 0, revenue: 0 }
+        productSales[item.product_id].totalSold += item.quantity
+        productSales[item.product_id].revenue += item.unit_price * item.quantity
+      }
+      const bestSellingProducts = products
+        .map(p => ({
+          ...p,
+          totalSold: productSales[p.id]?.totalSold ?? 0,
+          revenue: productSales[p.id]?.revenue ?? 0,
+        }))
+        .sort((a, b) => b.totalSold - a.totalSold)
+        .slice(0, 10)
+
+      const lowStockProducts = products
+        .filter(p => p.stock > 0 && p.stock <= 5)
+        .sort((a, b) => a.stock - b.stock)
+        .slice(0, 8)
+
+      const orderStatusCounts: Record<string, number> = {}
+      for (const o of allOrders) {
+        const s = o.status || 'pending'
+        orderStatusCounts[s] = (orderStatusCounts[s] || 0) + 1
+      }
+
+      // Monthly revenue: only shipped orders, exclude shipping_fee
+      const monthMap: Record<string, number> = {}
+      for (const o of shippedOrders) {
+        const m = o.created_at.slice(0, 7)
+        const itemSum = allOrderItems
+          .filter(item => item.order_id === o.id)
+          .reduce((sum, item) => sum + (item.unit_price * item.quantity), 0)
+        monthMap[m] = (monthMap[m] || 0) + itemSum
+      }
+      const monthlyRevenue = Object.entries(monthMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .slice(-6)
+        .map(([month, revenue]) => ({ month, revenue }))
 
       setStats({
-        totalProducts: products.length,
-        totalOrders: orders.length,
         totalRevenue,
+        totalOrders,
         totalUsers: profilesRes.count ?? 0,
-        recentOrders: orders,
-        topProducts: products.slice(0, 5),
+        pendingOrders: pendingCount,
+        shippedOrders: shippedCount,
+        averageOrderValue: avgOrderValue,
+        bestSellingProducts,
+        lowStockProducts,
+        orderStatusCounts,
+        monthlyRevenue,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch stats')
@@ -111,15 +196,15 @@ export function useAdmin() {
     }
   }, [])
 
-  const createProduct = useCallback(async (form: ProductForm, imageFile: File | null): Promise<boolean> => {
+  const createProduct = useCallback(async (form: ProductForm, imageFiles: File[]): Promise<boolean> => {
     setError(null)
     try {
-      let imageUrl = form.image_url || null
+      let primaryUrl: string | null = form.image_url || null
 
-      if (imageFile) {
-        const uploaded = await uploadImage(imageFile)
-        if (!uploaded) return false
-        imageUrl = uploaded
+      if (imageFiles.length > 0) {
+        const first = await uploadImage(imageFiles[0])
+        if (!first) return false
+        primaryUrl = first
       }
 
       const { data: product, error: insertError } = await supabase.from('products').insert({
@@ -131,12 +216,24 @@ export function useAdmin() {
         size: form.size,
         stock: parseInt(form.stock) || 0,
         is_trending: form.is_trending,
-        image_url: imageUrl,
+        image_url: primaryUrl,
       }).select().single()
 
       if (insertError) {
         setError(insertError.message)
         return false
+      }
+
+      // Upload remaining images and insert product_images rows
+      if (imageFiles.length > 0) {
+        const rows: Array<{ product_id: string; url: string; sort_order: number }> = []
+        for (let i = 0; i < imageFiles.length; i++) {
+          const url = i === 0 ? primaryUrl! : await uploadImage(imageFiles[i])
+          if (url) rows.push({ product_id: product.id, url, sort_order: i })
+        }
+        if (rows.length > 0) {
+          await supabase.from('product_images').insert(rows)
+        }
       }
 
       if (form.label_ids.length > 0) {
@@ -159,6 +256,56 @@ export function useAdmin() {
     }
     return true
   }, [])
+
+  const deleteProductImage = useCallback(async (id: string): Promise<boolean> => {
+    setError(null)
+    const { error } = await supabase.from('product_images').delete().eq('id', id)
+    if (error) {
+      setError(error.message)
+      return false
+    }
+    return true
+  }, [])
+
+  const updateProductImages = useCallback(async (productId: string, newFiles: File[], removeIds: string[]): Promise<boolean> => {
+    setError(null)
+    try {
+      if (removeIds.length > 0) {
+        await supabase.from('product_images').delete().in('id', removeIds)
+      }
+
+      if (newFiles.length > 0) {
+        const rows: Array<{ product_id: string; url: string; sort_order: number }> = []
+        for (let i = 0; i < newFiles.length; i++) {
+          const url = await uploadImage(newFiles[i])
+          if (url) rows.push({ product_id: productId, url, sort_order: i })
+        }
+        if (rows.length > 0) {
+          await supabase.from('product_images').insert(rows)
+        }
+      }
+
+      // Update the primary image_url to the first product_images row if it exists
+      const { data: existing } = await supabase
+        .from('product_images')
+        .select('url')
+        .eq('product_id', productId)
+        .order('sort_order', { ascending: true })
+        .limit(1)
+
+      if (existing && existing.length > 0) {
+        await supabase.from('products').update({ image_url: existing[0].url }).eq('id', productId)
+      } else if (removeIds.length > 0 && (!newFiles || newFiles.length === 0)) {
+        // All images removed, set to null
+        await supabase.from('products').update({ image_url: null }).eq('id', productId)
+      }
+
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update images')
+      return false
+    }
+  }, [uploadImage])
 
   const updateProduct = useCallback(async (id: string, updates: Partial<ProductForm>): Promise<boolean> => {
     setError(null)
@@ -241,6 +388,51 @@ export function useAdmin() {
     return true
   }, [])
 
+  const markAsShipped = useCallback(async (orderId: string): Promise<boolean> => {
+    setError(null)
+    const { error } = await supabase
+      .from('orders')
+      .update({ status: 'shipped' })
+      .eq('id', orderId)
+    if (error) {
+      setError(error.message)
+      return false
+    }
+    return true
+  }, [])
+
+  const fetchOrders = useCallback(async (): Promise<FullOrder[]> => {
+    setError(null)
+    try {
+      const { data: orders, error: ordersError } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (ordersError) throw ordersError
+
+      const { data: items, error: itemsError } = await supabase
+        .from('order_items')
+        .select('*')
+
+      if (itemsError) throw itemsError
+
+      const itemMap: Record<string, OrderItem[]> = {}
+      for (const item of items ?? []) {
+        if (!itemMap[item.order_id]) itemMap[item.order_id] = []
+        itemMap[item.order_id].push(item)
+      }
+
+      return (orders ?? []).map(o => ({
+        ...o,
+        items: itemMap[o.id] ?? [],
+      }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch orders')
+      return []
+    }
+  }, [])
+
   return {
     stats,
     loading,
@@ -249,10 +441,14 @@ export function useAdmin() {
     createProduct,
     deleteProduct,
     updateProduct,
+    updateProductImages,
     addStock,
+    deleteProductImage,
     createLabel,
     updateLabel,
     deleteLabel,
     uploadImage,
+    markAsShipped,
+    fetchOrders,
   }
 }

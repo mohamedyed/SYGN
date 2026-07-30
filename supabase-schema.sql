@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS orders (
 
 -- Add columns that may not exist yet on existing tables (schema evolves)
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_fee numeric(10, 2) NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_phone text;
 
 -- 6. ORDER ITEMS
 CREATE TABLE IF NOT EXISTS order_items (
@@ -118,6 +119,15 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_at timestamptz DEFAULT now()
 );
 
+-- 9. PRODUCT IMAGES (gallery — multiple photos per product)
+CREATE TABLE IF NOT EXISTS product_images (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id uuid REFERENCES products(id) ON DELETE CASCADE,
+  url text NOT NULL,
+  sort_order integer NOT NULL DEFAULT 0,
+  created_at timestamptz DEFAULT now()
+);
+
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 
 -- Admins can read/write settings; the checkout hook reads publicly
@@ -141,6 +151,7 @@ INSERT INTO settings (key, value) VALUES ('shipping_fee', '0')
 ALTER TABLE labels ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_labels ENABLE ROW LEVEL SECURITY;
+ALTER TABLE product_images ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
@@ -148,6 +159,9 @@ ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
 
 -- Drop old policies to avoid conflicts
 DO $$ BEGIN
+  DROP POLICY IF EXISTS "Labels are public" ON labels;
+  DROP POLICY IF EXISTS "Product labels are public" ON product_labels;
+  DROP POLICY IF EXISTS "Product images are public" ON product_images;
   DROP POLICY IF EXISTS "Products are public" ON products;
   DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
   DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
@@ -160,13 +174,15 @@ DO $$ BEGIN
   DROP POLICY IF EXISTS "Authenticated users can create reviews" ON reviews;
   DROP POLICY IF EXISTS "Users can update own reviews" ON reviews;
   DROP POLICY IF EXISTS "Users can delete own reviews" ON reviews;
-EXCEPTION WHEN undefined_object THEN null;
+EXCEPTION WHEN undefined_object OR duplicate_object THEN null;
 END $$;
 
 -- Labels & product_labels: anyone can read
 CREATE POLICY "Labels are public" ON labels
   FOR SELECT USING (true);
 CREATE POLICY "Product labels are public" ON product_labels
+  FOR SELECT USING (true);
+CREATE POLICY "Product images are public" ON product_images
   FOR SELECT USING (true);
 
 -- Products: anyone can read
@@ -181,17 +197,17 @@ CREATE POLICY "Users can update own profile" ON profiles
 
 -- Orders: users can read/create/delete their own
 CREATE POLICY "Users can view own orders" ON orders
-  FOR SELECT USING (auth.uid() = user_id);
+  FOR SELECT USING (auth.uid() = user_id OR user_id IS NULL);
 CREATE POLICY "Users can create orders" ON orders
   FOR INSERT WITH CHECK (auth.uid() = user_id OR user_id IS NULL);
 CREATE POLICY "Users can delete own orders" ON orders
-  FOR DELETE USING (auth.uid() = user_id);
+  FOR DELETE USING (auth.uid() = user_id OR user_id IS NULL);
 
 -- Order items: users can read items from their own orders
 CREATE POLICY "Users can view own order items" ON order_items
   FOR SELECT USING (
     EXISTS (
-      SELECT 1 FROM orders WHERE orders.id = order_items.order_id AND orders.user_id = auth.uid()
+      SELECT 1 FROM orders WHERE orders.id = order_items.order_id AND (orders.user_id = auth.uid() OR orders.user_id IS NULL)
     )
   );
 CREATE POLICY "Users can create order items" ON order_items
@@ -244,6 +260,18 @@ DROP TRIGGER IF EXISTS on_order_item_insert ON order_items;
 CREATE TRIGGER on_order_item_insert
   AFTER INSERT ON order_items
   FOR EACH ROW EXECUTE FUNCTION sync_order_total();
+
+-- Atomically decrement stock (race-condition safe)
+CREATE OR REPLACE FUNCTION decrement_product_stock(pid uuid, qty integer)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE products SET stock = stock - qty WHERE id = pid AND stock >= qty;
+  RETURN FOUND;
+END;
+$$;
 
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM labels LIMIT 1) THEN
