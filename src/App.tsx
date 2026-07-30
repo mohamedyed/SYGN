@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BrowserRouter, Routes, Route, useNavigate, useParams, useLocation, Link, Navigate } from 'react-router-dom'
-import { SpeedInsights } from '@vercel/speed-insights/react'
 import coverImage from './assets/cover.png'
 import {
   ArrowRight,
@@ -30,6 +29,8 @@ import {
 } from 'lucide-react'
 import './index.css'
 
+import { Analytics } from "@vercel/analytics/react"
+import { SpeedInsights } from "@vercel/speed-insights/react"
 import { supabase } from './lib/supabase'
 import { useAuth } from './lib/useAuth'
 import { useCart } from './lib/useCart'
@@ -226,6 +227,8 @@ function App() {
 
   return (
     <BrowserRouter>
+      <Analytics />
+      <SpeedInsights />
       <div className="app-shell">
         <SiteHeaderWrapper
           theme={theme}
