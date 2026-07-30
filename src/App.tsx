@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BrowserRouter, Routes, Route, useNavigate, useParams, useLocation, Link, Navigate } from 'react-router-dom'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import coverImage from './assets/cover.png'
 import {
   ArrowRight,
@@ -285,6 +286,7 @@ function App() {
 
         <SiteFooter />
       </div>
+      <SpeedInsights />
     </BrowserRouter>
   )
 }
