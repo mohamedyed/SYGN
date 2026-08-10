@@ -286,13 +286,13 @@ END $$;
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM products LIMIT 1) THEN
     INSERT INTO products (title, subtitle, price, glow, size, image_url, stock, is_trending) VALUES
-      ('NO PARKING', 'Neon Edition · 1 of 50', 1200.00, 'pink', 'xl', '/assets/sign1.png', 50, true),
+      ('NO PARKING', 'Street Edition · 1 of 50', 1200.00, 'pink', 'xl', '/assets/sign1.png', 50, true),
       ('ONE WAY', 'Street Series · Matte Black', 890.00, 'blue', 'xl', '/assets/sign2.png', 100, true),
       ('DEAD END', 'Limited Run · Steel', 750.00, 'red', 'lg', '/assets/sign3.png', 75, true),
       ('SYGN', 'Core · Pure White', 450.00, 'white', 'xl', '/assets/sign4.png', 200, true),
       ('OPEN 24H', 'Always On · Amber Glass', 680.00, 'amber', 'sm', null, 60, true),
       ('DO NOT ENTER', 'Crimson Series · Acrylic', 920.00, 'red', 'md', null, 40, true),
-      ('WALK', 'Pedestrian · Warm Neon', 540.00, 'green', 'sm', null, 80, true),
+      ('WALK', 'Pedestrian · Reflective', 540.00, 'green', 'sm', null, 80, true),
       ('ZONE', 'District · Electric Blue', 1050.00, 'cyan', 'md', null, 30, true),
       ('SLOW', 'Caution · Orange Glow', 380.00, 'warm', 'sm', null, 90, true),
       ('SYGN STUDIO', 'Flagship · Purple Haze', 1500.00, 'purple', 'lg', null, 25, true);
