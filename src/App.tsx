@@ -225,20 +225,20 @@ function usePageMeta(products: Product[]) {
       ? products.find(p => p.id === decodeURIComponent(pathname.split('/')[2] ?? ''))
       : undefined
 
-    let title = 'SYGN Tunisie | Street Signs & Neon Signage'
-    let description = 'SYGN — premium street-inspired illuminated signs handcrafted in Tunisia. Custom neon signs, LED signage & collectible street signs, delivered across Tunisie.'
+    let title = 'SYGN | Street Signs'
+    let description = 'SYGN — premium street-inspired illuminated signs handcrafted in Tunisia. Custom & collectible street signs, delivered across Tunisie.'
 
     if (product) {
-      title = `${product.title} — SYGN Tunisie`
-      description = `${product.title}${product.subtitle ? ` — ${product.subtitle}` : ''}. ${product.price.toLocaleString()} DT. Handcrafted illuminated sign by SYGN Tunisie.`
+      title = `${product.title} — SYGN`
+      description = `${product.title}${product.subtitle ? ` — ${product.subtitle}` : ''}. ${product.price.toLocaleString()} DT. Handcrafted illuminated sign by SYGN.`
     } else if (pathname === '/collection') {
-      title = 'Collection — SYGN Tunisie'
-      description = 'Browse the full SYGN collection — premium illuminated street signs, neon signs and LED signage in Tunisie.'
+      title = 'Collection — SYGN'
+      description = 'Browse the full SYGN collection — premium illuminated street signs, delivered across Tunisie.'
     } else if (pathname === '/checkout') {
-      title = 'Checkout — SYGN Tunisie'
+      title = 'Checkout — SYGN'
       description = 'Finalize your SYGN order — secure checkout, cash on delivery, delivery across Tunisie.'
     } else if (pathname === '/auth') {
-      title = 'Sign In — SYGN Tunisie'
+      title = 'Sign In — SYGN'
       description = 'Sign in or create your SYGN account to track orders.'
     }
 
@@ -485,6 +485,7 @@ function HomeView({
         <div className="shop-intro">
           <h1>The Digital Street</h1>
           <p>Street-grade signage for modern spaces. Walk through and find your sign.</p>
+          <p className="home-fr">Enseignes lumineuses artisanales — fabriquées en Tunisie par SYGN.</p>
         </div>
 
         <div className="order-now-row">
@@ -570,6 +571,7 @@ function CollectionView({
         <div>
           <h1>COLLECTION</h1>
           <p>Full range of premium illuminated signage. Minimalist design meets technical precision.</p>
+          <p className="home-fr">Toute la gamme d'enseignes lumineuses — collection SYGN, livrée dans toute la Tunisie.</p>
         </div>
         <div className="collection-metrics">
           <span>FW24</span>
@@ -1784,7 +1786,7 @@ function AdminAddProduct({
           />
           <input
             className="field-input"
-            placeholder="Subtitle (e.g. Neon Edition · 1 of 50)"
+            placeholder="Subtitle (e.g. Street Edition · 1 of 50)"
             value={form.subtitle}
             onChange={e => updateField('subtitle', e.target.value)}
           />

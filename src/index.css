@@ -453,6 +453,10 @@ a {
   margin: 0 auto;
 }
 
+.shop-intro p.home-fr {
+  margin-top: 6px;
+}
+
 .order-now-row {
   text-align: center;
   margin-top: -20px;
@@ -1069,6 +1073,11 @@ a {
   line-height: 1.6;
   margin-top: 12px;
   font-size: 0.9rem;
+}
+
+.home-fr {
+  font-size: 0.85rem;
+  opacity: 0.8;
 }
 
 .collection-metrics {
