@@ -91,20 +91,25 @@ export function useAdmin() {
       const allOrders = allOrdersRes.data ?? []
       const allOrderItems = orderItemsRes.data ?? []
 
+      // Archived orders are excluded from all analytics (soft reset)
+      const archivedOrderIds = new Set(allOrders.filter(o => o.status === 'archived').map(o => o.id))
+      const orders = allOrders.filter(o => o.status !== 'archived')
+      const orderItems = allOrderItems.filter(item => !archivedOrderIds.has(item.order_id))
+
       // Revenue: only shipped orders, exclude shipping_fee
-      const shippedOrders = allOrders.filter(o => o.status === 'shipped')
+      const shippedOrders = orders.filter(o => o.status === 'shipped')
       const shippedOrderIds = new Set(shippedOrders.map(o => o.id))
-      const shippedItems = allOrderItems.filter(item => shippedOrderIds.has(item.order_id))
+      const shippedItems = orderItems.filter(item => shippedOrderIds.has(item.order_id))
       const totalRevenue = shippedItems.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0)
 
-      const totalOrders = allOrders.length
+      const totalOrders = orders.length
       const shippedCount = shippedOrders.length
-      const pendingCount = allOrders.filter(o => o.status !== 'shipped').length
+      const pendingCount = orders.filter(o => o.status !== 'shipped').length
       const avgOrderValue = shippedCount > 0 ? Math.round(totalRevenue / shippedCount) : 0
 
       // Best-selling products: aggregate sold qty and revenue from ALL order_items (not just shipped)
       const productSales: Record<string, { totalSold: number; revenue: number }> = {}
-      for (const item of allOrderItems) {
+      for (const item of orderItems) {
         if (!productSales[item.product_id]) productSales[item.product_id] = { totalSold: 0, revenue: 0 }
         productSales[item.product_id].totalSold += item.quantity
         productSales[item.product_id].revenue += item.unit_price * item.quantity
@@ -124,7 +129,7 @@ export function useAdmin() {
         .slice(0, 8)
 
       const orderStatusCounts: Record<string, number> = {}
-      for (const o of allOrders) {
+      for (const o of orders) {
         const s = o.status || 'pending'
         orderStatusCounts[s] = (orderStatusCounts[s] || 0) + 1
       }
@@ -133,7 +138,7 @@ export function useAdmin() {
       const monthMap: Record<string, number> = {}
       for (const o of shippedOrders) {
         const m = o.created_at.slice(0, 7)
-        const itemSum = allOrderItems
+        const itemSum = orderItems
           .filter(item => item.order_id === o.id)
           .reduce((sum, item) => sum + (item.unit_price * item.quantity), 0)
         monthMap[m] = (monthMap[m] || 0) + itemSum
@@ -401,6 +406,19 @@ export function useAdmin() {
     return true
   }, [])
 
+  const resetAnalytics = useCallback(async (): Promise<boolean> => {
+    setError(null)
+    const { error } = await supabase
+      .from('orders')
+      .update({ status: 'archived' })
+      .neq('status', 'archived')
+    if (error) {
+      setError(error.message)
+      return false
+    }
+    return true
+  }, [])
+
   const fetchOrders = useCallback(async (): Promise<FullOrder[]> => {
     setError(null)
     try {
@@ -449,6 +467,7 @@ export function useAdmin() {
     deleteLabel,
     uploadImage,
     markAsShipped,
+    resetAnalytics,
     fetchOrders,
   }
 }

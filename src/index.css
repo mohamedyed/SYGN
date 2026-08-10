@@ -1778,6 +1778,32 @@ a {
   white-space: nowrap;
 }
 
+.footer-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.footer-social {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(240, 237, 232, 0.03);
+  transition: all 0.2s ease;
+}
+
+.footer-social:hover {
+  color: var(--ink);
+  background: rgba(240, 237, 232, 0.08);
+}
+
 /* ─── LIGHT MODE OVERRIDES ─── */
 
 [data-theme="light"] body {
@@ -2917,6 +2943,12 @@ a {
   border: 1px solid rgba(34, 197, 94, 0.3);
 }
 
+.status-archived {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--ink-soft);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
 .admin-list-thumb {
   width: 40px;
   height: 40px;
@@ -3058,6 +3090,35 @@ a {
 
 .icon-button.danger:hover {
   background: rgba(239, 68, 68, 0.12);
+}
+
+.stock-add-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stock-add-input {
+  width: 56px;
+  min-height: 32px;
+  padding: 0 8px;
+  text-align: center;
+  font-size: 0.8rem;
+}
+
+.stock-add-input::-webkit-outer-spin-button,
+.stock-add-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.stock-add-input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.admin-reset-btn {
+  flex-shrink: 0;
 }
 
 /* ─── ADD PRODUCT FORM ─── */

@@ -26,6 +26,7 @@ import {
   Tags,
   ClipboardList,
   CheckCircle,
+  RotateCcw,
 } from 'lucide-react'
 import './index.css'
 
@@ -215,6 +216,44 @@ function useDraggable() {
   return { offset, isDragging, didMove, onPointerDown }
 }
 
+function usePageMeta(products: Product[]) {
+  const location = useLocation()
+
+  useEffect(() => {
+    const pathname = location.pathname
+    const product = pathname.startsWith('/product/')
+      ? products.find(p => p.id === decodeURIComponent(pathname.split('/')[2] ?? ''))
+      : undefined
+
+    let title = 'SYGN Tunisie | Street Signs & Neon Signage'
+    let description = 'SYGN — premium street-inspired illuminated signs handcrafted in Tunisia. Custom neon signs, LED signage & collectible street signs, delivered across Tunisie.'
+
+    if (product) {
+      title = `${product.title} — SYGN Tunisie`
+      description = `${product.title}${product.subtitle ? ` — ${product.subtitle}` : ''}. ${product.price.toLocaleString()} DT. Handcrafted illuminated sign by SYGN Tunisie.`
+    } else if (pathname === '/collection') {
+      title = 'Collection — SYGN Tunisie'
+      description = 'Browse the full SYGN collection — premium illuminated street signs, neon signs and LED signage in Tunisie.'
+    } else if (pathname === '/checkout') {
+      title = 'Checkout — SYGN Tunisie'
+      description = 'Finalize your SYGN order — secure checkout, cash on delivery, delivery across Tunisie.'
+    } else if (pathname === '/auth') {
+      title = 'Sign In — SYGN Tunisie'
+      description = 'Sign in or create your SYGN account to track orders.'
+    }
+
+    document.title = title
+
+    const meta = document.querySelector('meta[name="description"]')
+    if (meta) meta.setAttribute('content', description)
+  }, [location.pathname, products])
+}
+
+function PageMetaManager({ products }: { products: Product[] }) {
+  usePageMeta(products)
+  return null
+}
+
 function App() {
   const [theme, setTheme] = useState<Theme>('dark')
   const auth = useAuth()
@@ -229,6 +268,7 @@ function App() {
     <BrowserRouter>
       <Analytics />
       <SpeedInsights />
+      <PageMetaManager products={products} />
       <div className="app-shell">
         <SiteHeaderWrapper
           theme={theme}
@@ -1119,6 +1159,7 @@ function AdminView({
   const shippingFee = useShippingFee()
   const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'add' | 'labels' | 'shipping' | 'orders'>('dashboard')
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
+  const [resettingAnalytics, setResettingAnalytics] = useState(false)
 
   const tabFromUrl = useCallback(() => {
     if (location.pathname === '/admin/products') return 'products' as const
@@ -1148,6 +1189,14 @@ function AdminView({
     else navigate('/admin/add')
   }
 
+  const handleResetAnalytics = async () => {
+    if (!confirm('Archive all orders? Analytics (revenue, orders, best sellers, monthly chart) will reset to zero. Archived orders remain visible in the Orders tab.')) return
+    setResettingAnalytics(true)
+    const ok = await admin.resetAnalytics()
+    if (ok) await admin.fetchStats()
+    setResettingAnalytics(false)
+  }
+
   return (
     <section className="page-admin">
       <div className="admin-header">
@@ -1155,6 +1204,14 @@ function AdminView({
           <h1>Admin Dashboard</h1>
           <p>Manage your store, products, and orders.</p>
         </div>
+        <button
+          type="button"
+          className="button-secondary small admin-reset-btn"
+          onClick={handleResetAnalytics}
+          disabled={resettingAnalytics}
+        >
+          <RotateCcw size={14} /> {resettingAnalytics ? 'Resetting...' : 'Reset Analytics'}
+        </button>
       </div>
 
       <div className="admin-tabs">
@@ -1431,6 +1488,7 @@ function AdminProducts({
 }) {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [addingStock, setAddingStock] = useState<string | null>(null)
+  const [stockAmounts, setStockAmounts] = useState<Record<string, string>>({})
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this product?')) return
@@ -1442,9 +1500,14 @@ function AdminProducts({
 
   const handleAddStock = async (id: string) => {
     if (!onAddStock) return
+    const amount = parseInt(stockAmounts[id] ?? '', 10)
+    if (isNaN(amount) || amount < 1) return
     setAddingStock(id)
-    const ok = await onAddStock(id, 10)
-    if (ok) onRefresh()
+    const ok = await onAddStock(id, amount)
+    if (ok) {
+      setStockAmounts(prev => ({ ...prev, [id]: '' }))
+      onRefresh()
+    }
     setAddingStock(null)
   }
 
@@ -1488,15 +1551,28 @@ function AdminProducts({
               <PenSquare size={14} />
             </button>
             {onAddStock && (
-              <button
-                type="button"
-                className="icon-button small"
-                title="Add 10 Stock"
-                disabled={addingStock === product.id}
-                onClick={() => handleAddStock(product.id)}
-              >
-                <Plus size={14} />
-              </button>
+              <div className="stock-add-row">
+                <input
+                  className="field-input stock-add-input"
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="1"
+                  title="Quantity to add"
+                  value={stockAmounts[product.id] ?? ''}
+                  onChange={e => setStockAmounts(prev => ({ ...prev, [product.id]: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') handleAddStock(product.id) }}
+                />
+                <button
+                  type="button"
+                  className="icon-button small"
+                  title="Add stock"
+                  disabled={addingStock === product.id}
+                  onClick={() => handleAddStock(product.id)}
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
             )}
             <button
               type="button"
@@ -2420,6 +2496,16 @@ function FilterSection({
   )
 }
 
+function IconInstagram({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+    </svg>
+  )
+}
+
 function SiteFooter() {
   return (
     <footer className="site-footer">
@@ -2428,7 +2514,18 @@ function SiteFooter() {
           <span>SY<span className="brand-arabic">ڨ</span>N<span style={{ color: 'var(--glow-pink)' }}>.</span></span>
           <p>Street-grade signage for modern spaces. Handcrafted, precision-engineered, built to last.</p>
         </div>
-        <p className="footer-copyright">&copy; 2024 SY<span className="brand-arabic">ڨ</span>N STUDIOS. ALL RIGHTS RESERVED.</p>
+        <div className="footer-right">
+          <a
+            href="https://www.instagram.com/sygn_tn"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="footer-social"
+            aria-label="SYGN on Instagram"
+          >
+            <IconInstagram /> @sygn_tn
+          </a>
+          <p className="footer-copyright">&copy; 2024 SY<span className="brand-arabic">ڨ</span>N STUDIOS. ALL RIGHTS RESERVED.</p>
+        </div>
       </div>
     </footer>
   )
