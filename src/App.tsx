@@ -226,14 +226,14 @@ function usePageMeta(products: Product[]) {
       : undefined
 
     let title = 'SYGN | Street Signs'
-    let description = 'SYGN — premium street-inspired illuminated signs handcrafted in Tunisia. Custom & collectible street signs, delivered across Tunisie.'
+    let description = 'SYGN — premium street-grade reflective signs handcrafted in Tunisia. Custom & collectible street signs, delivered across Tunisie.'
 
     if (product) {
       title = `${product.title} — SYGN`
-      description = `${product.title}${product.subtitle ? ` — ${product.subtitle}` : ''}. ${product.price.toLocaleString()} DT. Handcrafted illuminated sign by SYGN.`
+      description = `${product.title}${product.subtitle ? ` — ${product.subtitle}` : ''}. ${product.price.toLocaleString()} DT. Handcrafted reflective street sign by SYGN.`
     } else if (pathname === '/collection') {
       title = 'Collection — SYGN'
-      description = 'Browse the full SYGN collection — premium illuminated street signs, delivered across Tunisie.'
+      description = 'Browse the full SYGN collection — premium reflective street signs, delivered across Tunisie.'
     } else if (pathname === '/checkout') {
       title = 'Checkout — SYGN'
       description = 'Finalize your SYGN order — secure checkout, cash on delivery, delivery across Tunisie.'
@@ -485,7 +485,7 @@ function HomeView({
         <div className="shop-intro">
           <h1>The Digital Street</h1>
           <p>Street-grade signage for modern spaces. Walk through and find your sign.</p>
-          <p className="home-fr">Enseignes lumineuses artisanales — fabriquées en Tunisie par SYGN.</p>
+          <p className="home-fr">Enseignes réfléchissantes artisanales — fabriquées en Tunisie par SYGN.</p>
         </div>
 
         <div className="order-now-row">
@@ -570,8 +570,8 @@ function CollectionView({
       <div className="collection-topbar">
         <div>
           <h1>COLLECTION</h1>
-          <p>Full range of premium illuminated signage. Minimalist design meets technical precision.</p>
-          <p className="home-fr">Toute la gamme d'enseignes lumineuses — collection SYGN, livrée dans toute la Tunisie.</p>
+          <p>Full range of premium reflective signage. Minimalist design meets technical precision.</p>
+          <p className="home-fr">Toute la gamme d'enseignes réfléchissantes — collection SYGN, livrée dans toute la Tunisie.</p>
         </div>
         <div className="collection-metrics">
           <span>FW24</span>
